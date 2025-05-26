@@ -32,10 +32,10 @@
     mime-types "~2.1.35"
     ora "^5.4.1"
 
-"@capacitor/android@^7.0.0":
-  version "7.1.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-7.1.0.tgz#01af24445e9b56fae09d3a97c7343911344052cc"
-  integrity sha512-piPgQViWOjh18H7R8wDkh5uaZ5PwRbMxGZFu39ReP8Y0nZwjS8ESUvJuBm38T+HHJnHM6MnDHmCWnW3ixKqeZw==
+"@capacitor/android@^6.0.0":
+  version "6.2.1"
+  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-6.2.1.tgz#705347b62605b692093a96c81ce335875ea954e2"
+  integrity sha512-8gd4CIiQO5LAIlPIfd5mCuodBRxMMdZZEdj8qG8m+dQ1sQ2xyemVpzHmRK8qSCHorsBUCg3D62j2cp6bEBAkdw==
 
 "@capacitor/cli@>=5.4.0":
   version "7.2.0"
@@ -67,10 +67,10 @@
   dependencies:
     tslib "^2.1.0"
 
-"@capacitor/core@^7.0.0":
-  version "7.1.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/core/-/core-7.1.0.tgz#afaa414e56295dc4a2a691d8527c31199977ee5a"
-  integrity sha512-I0a4C8gux5sx+HDamJjCiWHEWRdJU3hejwURFOSwJjUmAMkfkrm4hOsI0dgd+S0eCkKKKYKz9WNm7DAIvhm2zw==
+"@capacitor/core@^6.0.0":
+  version "6.2.1"
+  resolved "https://registry.yarnpkg.com/@capacitor/core/-/core-6.2.1.tgz#7f1cbf438e55d3c32940eac26abd307c19f8bdee"
+  integrity sha512-urZwxa7hVE/BnA18oCFAdizXPse6fCKanQyEqpmz6cBJ2vObwMpyJDG5jBeoSsgocS9+Ax+9vb4ducWJn0y2qQ==
   dependencies:
     tslib "^2.1.0"
 
@@ -85,10 +85,10 @@
     minimist "^1.2.8"
     typescript "~4.2.4"
 
-"@capacitor/ios@^7.0.0":
-  version "7.1.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-7.1.0.tgz#2b983666bdc74701c9c35f01aada910f48100e12"
-  integrity sha512-ND7GNxtBRnD6Az14D5YRFKFL4VtdLeXE6Zym1SVcKac0NZF18n4DBympBcnfCR61421FCmRlswbpPa9Fr+Czxw==
+"@capacitor/ios@^6.0.0":
+  version "6.2.1"
+  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-6.2.1.tgz#ac18a429072857c0fd88a74d30d6cc60288b7471"
+  integrity sha512-tbMlQdQjxe1wyaBvYVU1yTojKJjgluZQsJkALuJxv/6F8QTw5b6vd7X785O/O7cMpIAZfUWo/vtAHzFkRV+kXw==
 
 "@chevrotain/cst-dts-gen@11.0.3":
   version "11.0.3"

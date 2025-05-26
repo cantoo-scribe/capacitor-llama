@@ -6,4 +6,4 @@ include ':capacitor-filesystem'
 project(':capacitor-filesystem').projectDir = new File('../node_modules/@capacitor/filesystem/android')
 
 include ':capacitor-llama'
-project(':capacitor-llama').projectDir = new File('../node_modules/capacitor-llama/android')
+project(':capacitor-llama').projectDir = new File('../../android')

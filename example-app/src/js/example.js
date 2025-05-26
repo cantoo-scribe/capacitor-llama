@@ -29,7 +29,7 @@ window.loadModel = async () => {
     console.error('Invalid model uri: ', result.uri)
     return
   }
-  // console.log('model path: ', modelPath)
+  console.log('model path: ', modelPath)
   context = await LlamaContext.from({
     model: modelPath,
     use_mlock: true,

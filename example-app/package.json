@@ -21,11 +21,11 @@
   },
   "dependencies": {
     "@capacitor-community/electron": "^5.0.1",
-    "@capacitor/android": "7.0.0",
-    "@capacitor/core": "latest",
-    "@capacitor/filesystem": "^7.0.0",
-    "@capacitor/ios": "7.0.0",
-    "capacitor-llama": "file:.."
+    "@capacitor/android": "6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/ios": "6.0.0",
+    "capacitor-llama": "link:../"
   },
   "devDependencies": {
     "@capacitor/cli": "latest",
