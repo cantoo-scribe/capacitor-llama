@@ -1,7 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 import { Wllama } from '@wllama/wllama/esm/index.js';
 import WasmFromCDN from '@wllama/wllama/esm/wasm-from-cdn.js';
-// let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, ...);
 
 import type {
   CapacitorLlamaPlugin,
@@ -21,17 +20,16 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
   wllamas: Record<number, Wllama> = {}
   async initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext> {
     const wllamaInstance = new Wllama(WasmFromCDN)
-    // TODO: download from params
-    await wllamaInstance.loadModelFromHF('bartowski/Qwen2.5-0.5B-Instruct-GGUF', 'Qwen2.5-0.5B-Instruct-Q5_K_S.gguf', { 
+    await wllamaInstance.loadModelFromUrl(options.model, { 
       n_ctx: options.n_ctx,
       n_batch: options.n_batch,
       cache_type_k: options.cache_type_k !== 'iq4_nl' ? options.cache_type_k : undefined,
       cache_type_v: options.cache_type_v !== 'iq4_nl' ? options.cache_type_v: undefined,
       embeddings: options.embedding,
       n_threads: options.n_threads,
+      useCache: options.readFromCache,
     })
-    
-    // wllamaInstance.loadModelFromUrl()
+
     this.wllamas[options.id] = wllamaInstance
     return {
       gpu: false,

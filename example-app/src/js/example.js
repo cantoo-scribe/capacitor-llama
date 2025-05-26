@@ -53,7 +53,12 @@ window.loadModel = async () => {
   }
   console.log('model path: ', modelPath)
   context = await LlamaContext.from({
-    model: modelPath,
+    // for ios and android
+    // model: modelPath,
+    // for electron
+    // model: /path/to/model.gguf,
+    // for browser
+    model: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_S.gguf',
     use_mlock: true,
     n_ctx: 2048,
     n_gpu_layers: 0,

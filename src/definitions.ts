@@ -249,7 +249,23 @@ export interface CapacitorLlamaPlugin {
 }
 
 export type NativeContextParams = {
+  /**
+   * For **android**, **iOS** and **electron** the `model` is an absolute path. Example: `/path/to/my-model.gguf`
+   * 
+   * For **web** the `model` is an url. Example: https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_S.gguf
+   */
   model: string;
+  /**
+   * **Note: This option is available only on web.**
+   *
+   * Controls whether to load the model from the browser cache.
+   * 
+   * - If `true` (default), the model manager first tries to load the model from cache. 
+   *   If it's not cached, it will download the model and cache it for future use.
+   * 
+   * - If `false`, the model will always be downloaded, ignoring any cached versions.
+   */
+  readFromCache?: boolean;
   /**
    * Chat template to override the default one from the model.
    */
