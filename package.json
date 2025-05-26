@@ -1,7 +1,7 @@
 {
-  "name": "capacitor-llama",
+  "name": "@cantoo/capacitor-llama",
   "version": "0.0.1",
-  "description": "Capacitor implementation for llama models",
+  "description": "Capacitor binding of llama.cpp",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
   "types": "dist/esm/index.d.ts",
@@ -16,7 +16,7 @@
     "CapacitorLlama.podspec",
     "electron/"
   ],
-  "author": "cantoo",
+  "author": "Cantoo",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -28,7 +28,8 @@
   "keywords": [
     "capacitor",
     "plugin",
-    "native"
+    "native",
+    "llama"
   ],
   "scripts": {
     "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
