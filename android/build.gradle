@@ -11,14 +11,18 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath 'com.android.tools.build:gradle:8.6.0'
     }
 }
 
 apply plugin: 'com.android.library'
-
+// def getArchitectures() {
+//     def archs = ["x86_64", "arm64-v8a"]
+//     return archs.findAll { it != "armeabi-v7a" && it != "x86" } // Not building for 32-bit architectures
+// }
 android {
-    namespace "com.mycompany.plugins.example"
+    // namespace "com.mycompany.plugins.example"
+    namespace "com.rnllama";
     compileSdk project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
     defaultConfig {
         minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 23
@@ -26,6 +30,11 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // externalNativeBuild {
+        //     cmake {
+        //         abiFilters (*getArchitectures())
+        //     }
+        // }
     }
     buildTypes {
         release {
@@ -40,6 +49,18 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+
+    //  externalNativeBuild {
+    //    cmake {
+    //      path = file('src/main/CMakeLists.txt')
+    //    }
+    //  }
+     // Exclude jniLibs
+    //  sourceSets {
+    //    main {
+    //      jniLibs.srcDirs = []
+    //    }
+    //  }
 }
 
 repositories {

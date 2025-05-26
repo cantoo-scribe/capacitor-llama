@@ -10,13 +10,22 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:android": "yarn build && cap sync android",
+    "open:android": "cap open android",
+    "sync:ios": "yarn build && cap sync ios",
+    "open:ios": "cap open ios",
+    "sync:electron": "yarn build && cap sync @capacitor-community/electron",
+    "open:electron": "cap open @capacitor-community/electron",
+    "reinstall": "rm -rf node_modules && yarn && rm -rf node_modules/capacitor-llama/example-app"
   },
   "dependencies": {
+    "@capacitor-community/electron": "^5.0.1",
+    "@capacitor/android": "7.0.0",
     "@capacitor/core": "latest",
-    "capacitor-llama": "file:..",
+    "@capacitor/filesystem": "^7.0.0",
     "@capacitor/ios": "7.0.0",
-    "@capacitor/android": "7.0.0"
+    "capacitor-llama": "file:.."
   },
   "devDependencies": {
     "@capacitor/cli": "latest",

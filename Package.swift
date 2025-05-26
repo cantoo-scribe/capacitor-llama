@@ -19,7 +19,8 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm")
             ],
-            path: "ios/Sources/CapacitorLlamaPlugin"),
+            path: "ios/Sources/CapacitorLlamaPlugin",
+            publicHeadersPath: "include"),
         .testTarget(
             name: "CapacitorLlamaPluginTests",
             dependencies: ["CapacitorLlamaPlugin"],

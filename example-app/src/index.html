@@ -10,17 +10,77 @@
     <meta name="format-detection" content="telephone=no" />
   </head>
   <body>
-    <main>
-      <h1>Capacitor Test Plugin Project</h1>
-      <p>
-        This project can be used to test out the functionality of your plugin. Nothing in the
-        <em>example-app/</em> folder will be published to npm when using this template, so you can create away!
-      </p>
-      <label for="echoInput">Echo Text:</label>
-      <input type="text" id="echoInput" name="echoInput" value="Hello World!" />
-      <button onclick="testEcho()">Click Me!</button>
-    </main>
-
+    <div class="chat-container">
+      <div id="messagesContainer" class="messages">
+      </div>
+      <div class="input-container">
+        <input id="messageInput" type="text" placeholder="Type your message..." />
+        <button id="loadModel" onclick="loadModel()">Load</button>
+        <button id="sendMessage" onclick="completion()">Send</button>
+      </div>
+    </div>
     <script src="./js/example.js" type="module"></script>
   </body>
+  <style>
+    /* Chat container styling */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+  
+    /* Messages container */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+  
+    /* Message styling */
+    .message {
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 10px;
+      max-width: 70%;
+    }
+  
+    .message.received {
+      background-color: #e0e0e0;
+      align-self: flex-start;
+    }
+  
+    .message.sent {
+      background-color: #007bff;
+      color: white;
+      align-self: flex-end;
+    }
+  
+    /* Input container styling */
+    .input-container {
+      display: flex;
+      gap: 10px;
+    }
+  
+    .input-container input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+  
+    .input-container button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  
+    .input-container button:hover {
+      background-color: #0056b3;
+    }
+  </style>
 </html>
