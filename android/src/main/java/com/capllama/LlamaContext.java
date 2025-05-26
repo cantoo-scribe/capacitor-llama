@@ -345,9 +345,9 @@ public class LlamaContext {
         }
     }
 
-    // public void stopCompletion() {
-    //   stopCompletion(this.context);
-    // }
+    public void stopCompletion() {
+      stopCompletion(this.context);
+    }
 
     // public boolean isPredicting() {
     //   return isPredicting(this.context);
@@ -403,9 +403,9 @@ public class LlamaContext {
     //   return getLoadedLoraAdapters(this.context);
     // }
 
-    // public void release() {
-    //   freeContext(context);
-    // }
+    public void release() {
+      freeContext(context);
+    }
 
     static {
         Log.d(NAME, "Primary ABI: " + Build.SUPPORTED_ABIS[0]);
@@ -586,7 +586,7 @@ public class LlamaContext {
         String[] dry_sequence_breakers,
         PartialCompletionCallback partial_completion_callback
     );
-    // protected static native void stopCompletion(long contextPtr);
+    protected static native void stopCompletion(long contextPtr);
     // protected static native boolean isPredicting(long contextPtr);
     // protected static native WritableArray tokenize(long contextPtr, String text);
     // protected static native String detokenize(long contextPtr, int[] tokens);
@@ -600,7 +600,7 @@ public class LlamaContext {
     // protected static native int applyLoraAdapters(long contextPtr, ReadableArray loraAdapters);
     // protected static native void removeLoraAdapters(long contextPtr);
     // protected static native WritableArray getLoadedLoraAdapters(long contextPtr);
-    // protected static native void freeContext(long contextPtr);
+    protected static native void freeContext(long contextPtr);
     // protected static native void setupLog(NativeLogCallback logCallback);
     // protected static native void unsetLog();
 }

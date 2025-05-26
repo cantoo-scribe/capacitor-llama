@@ -15,6 +15,8 @@ npx cap sync
 
 * [`initContext(...)`](#initcontext)
 * [`completion(...)`](#completion)
+* [`releaseContext(...)`](#releasecontext)
+* [`releaseAllContexts()`](#releaseallcontexts)
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
@@ -48,6 +50,28 @@ completion(options: { id: number; params: CompletionParams; }) => Promise<Native
 | **`options`** | <code>{ id: number; params: <a href="#completionparams">CompletionParams</a>; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#nativecompletionresult">NativeCompletionResult</a>&gt;</code>
+
+--------------------
+
+
+### releaseContext(...)
+
+```typescript
+releaseContext(options: { id: number; }) => Promise<void>
+```
+
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: number; }</code> |
+
+--------------------
+
+
+### releaseAllContexts()
+
+```typescript
+releaseAllContexts() => Promise<void>
+```
 
 --------------------
 

@@ -91,4 +91,19 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
     }
   }
 
+  async releaseContext(options: { id: number; }): Promise<void> {
+    const wllama = this.wllamas[options.id]
+    if (!wllama) {
+      console.error('context not found:', options.id)
+      return
+    }
+    wllama.exit()
+    delete this.wllamas[options.id]
+  }
+
+  async releaseAllContexts(): Promise<void> {
+    await Promise.allSettled(Object.keys(this.wllamas).map(key => this.releaseContext({ id: Number(key) })))
+  }
+
+
 }

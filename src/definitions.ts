@@ -242,6 +242,10 @@ export interface CapacitorLlamaPlugin {
   ): Promise<NativeLlamaContext>;
 
   completion(options: { id: number; params: CompletionParams }): Promise<NativeCompletionResult>;
+  
+  releaseContext(options: { id: number }): Promise<void>
+
+  releaseAllContexts(): Promise<void>
 }
 
 export type NativeContextParams = {

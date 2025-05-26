@@ -29,4 +29,17 @@ public class CapacitorLlamaPlugin extends Plugin {
         JSObject ret = implementation.getFormattedChat(call.getData());
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void releaseAllContexts(PluginCall call) {
+        implementation.releaseAllContexts();
+        call.resolve();
+    }
+    
+    @PluginMethod
+    public void releaseContext(PluginCall call) {
+        Integer id = call.getInt("id", -1);
+        implementation.releaseContext(id, call.getData());
+        call.resolve();
+    }
 }

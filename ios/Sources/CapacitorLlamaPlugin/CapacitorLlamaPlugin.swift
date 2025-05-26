@@ -12,6 +12,8 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
     // TODO: implement the bridge pattern
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "initContext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "releaseContext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "releaseAllContexts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getFormattedChat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "completion", returnType: CAPPluginReturnPromise)
     ]
@@ -30,6 +32,28 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Invalid result format from RNLlama.initContext")
             }
 
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
+        }
+    }
+
+    @objc func releaseContext(_ call: CAPPluginCall) {
+        do {
+            guard let contextId = call.getDouble("id") else {
+                call.reject("Missing required parameter 'contextId'.")
+                return
+            }
+            CAPLlama.releaseContext(contextId)
+            call.resolve()
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
+        }
+    }
+
+    @objc func releaseAllContexts(_ call: CAPPluginCall) {
+        do {
+            CAPLlama.releaseAllContexts()
+            call.resolve()
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")
         }

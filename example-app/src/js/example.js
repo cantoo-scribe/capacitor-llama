@@ -2,13 +2,34 @@
 import { LlamaContext } from 'capacitor-llama';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
+function showBtn(id) {
+  const btn = document.getElementById(id)
+  if (!(btn instanceof HTMLButtonElement)) {
+    console.error(id, 'btn not found')
+    return
+  }
+  btn.disabled = false
+  btn.style.display = 'block'
+}
+
+function hideBtn(id) {
+  const btn = document.getElementById(id)
+  if (!(btn instanceof HTMLButtonElement)) {
+    console.error(id, 'btn not found')
+    return
+  }
+  btn.disabled = true
+  btn.style.display = 'none'
+}
+
 // @ts-ignore
-window.downloadModel = () => {
-  Filesystem.downloadFile({
+window.downloadModel = async () => {
+  await Filesystem.downloadFile({
     url: 'https://huggingface.co/medmekk/Qwen2.5-0.5B-Instruct.GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_S.gguf',
     directory: Directory.Documents,
     path: 'Qwen2.5-0.5B-Instruct-Q5_K_S.gguf',
   }).then(result => console.log('download model', result.path)).catch(e => console.error('error during download', e))
+  hideBtn('downloadModel')
 }
 
 /** @type {LlamaContext} */
@@ -20,9 +41,10 @@ window.loadModel = async () => {
     directory: Directory.Documents,
   })
   const modelPath = result.uri.split('file://').pop()
-  const loadBtn = document.getElementById('loadModel')
-  if (!(loadBtn instanceof HTMLButtonElement)) {
-    console.error('load btn not found')
+
+  const releaseBtn = document.getElementById('loadModel')
+  if (!(releaseBtn instanceof HTMLButtonElement)) {
+    console.error('release btn not found')
     return
   }
   if (!modelPath) {
@@ -37,8 +59,8 @@ window.loadModel = async () => {
     n_gpu_layers: 0,
     
   })
-  loadBtn.disabled = true
-  loadBtn.style.display = 'none'
+  hideBtn('loadModel')
+  showBtn('releaseModel')
   console.log('loaded: ', JSON.stringify(context.model.metadata))
   console.log('result', context.id, context.model.desc, context.model.size)
 }
@@ -55,7 +77,7 @@ const stopWords = [
   "<｜end▁of▁sentence｜>",
 ];
 
-const chat = [
+let chat = [
   {
     role: "system",
     content:
@@ -71,6 +93,11 @@ function updateMessagesLayout() {
     if (role === 'system') return ''
     return `<div class="message ${role === 'user' ? 'sent' : 'received'}">${content}</div>`
   }).join('\n')
+}
+
+function clearChat() {
+  chat = []
+  updateMessagesLayout()
 }
 
 function pushMessage(message) {
@@ -97,3 +124,14 @@ window.completion = async () => {
     content
   })
 }
+
+window.releaseModel = async () => {
+  await context.release()
+  clearChat()
+  showBtn('loadModel')
+  hideBtn('releaseModel')
+}
+
+
+hideBtn('releaseModel')
+hideBtn('downloadModel')

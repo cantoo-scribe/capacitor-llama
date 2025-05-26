@@ -46,4 +46,8 @@ export class LlamaContext {
     // TODO: add the params to the same level of id
     return CapacitorLlama.completion({ id: this.id, params: nativeParams });
   }
+
+  async release(): Promise<void> {
+    await CapacitorLlama.releaseContext({ id: this.id })
+  }
 }

@@ -97,4 +97,18 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
       }
     }
   }
+
+  async releaseContext(options: { id: number; }): Promise<void> {
+    const context = this.contexts[options.id]
+    if (!context) {
+      console.error('context not found:', options.id)
+      return
+    }
+    !context.disposed && await context.dispose()
+    delete this.contexts[options.id]
+  }
+
+  async releaseAllContexts(): Promise<void> {
+    await Promise.allSettled(Object.keys(this.contexts).map(key => this.releaseContext({ id: Number(key) })))
+  }
 }

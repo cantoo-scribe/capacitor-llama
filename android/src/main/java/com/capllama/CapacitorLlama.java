@@ -90,7 +90,7 @@ public class CapacitorLlama {
     //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     // }
 
-    public JSObject initContext(double id, final JSObject params/* final ReadableMap params , final Promise promise */) {
+    public JSObject initContext(double id, final JSObject params) {
         final int contextId = (int) id;
         try {
             LlamaContext context = contexts.get(contextId);
@@ -508,8 +508,19 @@ public class CapacitorLlama {
     //   tasks.put(task, "getLoadedLoraAdapters-" + contextId);
     // }
 
-    // public void releaseContext(double id, Promise promise) {
-    //   final int contextId = (int) id;
+    public void releaseContext(double id, final JSObject params) {
+        final int contextId = (int) id;
+        try {
+            LlamaContext context = contexts.get(contextId);
+            if (context == null) {
+              throw new Exception("Context " + id + " not found");
+            }
+            context.interruptLoad();
+            context.stopCompletion();
+            context.release();
+            contexts.remove(contextId);
+        } catch (Exception e) {
+        }
     //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
     //     private Exception exception;
 
@@ -548,9 +559,15 @@ public class CapacitorLlama {
     //     }
     //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     //   tasks.put(task, "releaseContext-" + contextId);
-    // }
+    }
 
-    // public void releaseAllContexts(Promise promise) {
+    public void releaseAllContexts() {
+        for (LlamaContext context : contexts.values()) {
+            context.stopCompletion();
+            context.release();
+        }
+        contexts.clear();
+
     //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
     //     private Exception exception;
 
@@ -575,7 +592,7 @@ public class CapacitorLlama {
     //     }
     //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     //   tasks.put(task, "releaseAllContexts");
-    // }
+    }
 
     // @Override
     // public void onHostResume() {
