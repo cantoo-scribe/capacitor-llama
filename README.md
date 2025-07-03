@@ -15,8 +15,11 @@ npx cap sync
 
 * [`initContext(...)`](#initcontext)
 * [`completion(...)`](#completion)
+* [`stopCompletion(...)`](#stopcompletion)
 * [`releaseContext(...)`](#releasecontext)
 * [`releaseAllContexts()`](#releaseallcontexts)
+* [`tokenize(...)`](#tokenize)
+* [`detokenize(...)`](#detokenize)
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
@@ -54,6 +57,19 @@ completion(options: { id: number; params: CompletionParams; }) => Promise<Native
 --------------------
 
 
+### stopCompletion(...)
+
+```typescript
+stopCompletion(options: { id: number; }) => Promise<void>
+```
+
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: number; }</code> |
+
+--------------------
+
+
 ### releaseContext(...)
 
 ```typescript
@@ -72,6 +88,36 @@ releaseContext(options: { id: number; }) => Promise<void>
 ```typescript
 releaseAllContexts() => Promise<void>
 ```
+
+--------------------
+
+
+### tokenize(...)
+
+```typescript
+tokenize(options: { id: number; text: string; specialTokens?: boolean; }) => Promise<{ tokens: number[]; }>
+```
+
+| Param         | Type                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| **`options`** | <code>{ id: number; text: string; specialTokens?: boolean; }</code> |
+
+**Returns:** <code>Promise&lt;{ tokens: number[]; }&gt;</code>
+
+--------------------
+
+
+### detokenize(...)
+
+```typescript
+detokenize(options: { id: number; tokens: number[]; }) => Promise<{ text: string; }>
+```
+
+| Param         | Type                                           |
+| ------------- | ---------------------------------------------- |
+| **`options`** | <code>{ id: number; tokens: number[]; }</code> |
+
+**Returns:** <code>Promise&lt;{ text: string; }&gt;</code>
 
 --------------------
 

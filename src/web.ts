@@ -15,9 +15,9 @@ import type {
 //   'single-thread/wllama.wasm': './esm/single-thread/wllama.wasm',
 //   'multi-thread/wllama.wasm' : './esm/multi-thread/wllama.wasm',
 // };
-
 export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin {
   wllamas: Record<number, Wllama> = {}
+  completionAbortControllers: Record<number, () => void> = {}
   async initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext> {
     const wllamaInstance = new Wllama(WasmFromCDN)
     await wllamaInstance.loadModelFromUrl(options.model, { 
@@ -57,6 +57,10 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
   async completion(options: { id: number; params: CompletionParams; }): Promise<NativeCompletionResult> {
     const wllama = this.wllamas[options.id]
     let result = ''
+    let abort = false
+    this.completionAbortControllers[options.id] = () => {
+      abort = true
+    }
     if (options.params.messages?.length) {
       const history = options.params.messages.map(message => {
         const messageContent = message.content || ''
@@ -77,16 +81,35 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
         }
       }).filter(m => !!m)
       // 'system' | 'user' | 'assistant'
-      result = await wllama.createChatCompletion(history, {})
+      result = await wllama.createChatCompletion(history, {
+        nPredict: options.params.n_predict,
+        onNewToken(_token, _piece, _currentText, { abortSignal }) {
+          if (abort) abortSignal()
+        },
+      }).finally(() => {
+        delete this.completionAbortControllers[options.id]
+      })
       
     } else if (options.params.prompt) {
-      result = await wllama.createCompletion(options.params.prompt, {})
+      result = await wllama.createCompletion(options.params.prompt, {
+        nPredict: options.params.n_predict,
+        onNewToken(_token, _piece, _currentText, { abortSignal }) {
+          if (abort) abortSignal()
+        },
+      }).finally(() => {
+        delete this.completionAbortControllers[options.id]
+      })
     }
     return {
       text: result,
       content: result,
       reasoning_content: ''
     }
+  }
+
+  async stopCompletion(options: { id: number; }): Promise<void> {
+    const abortController = this.completionAbortControllers[options.id]
+    if (abortController) abortController()
   }
 
   async releaseContext(options: { id: number; }): Promise<void> {
@@ -97,11 +120,24 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
     }
     wllama.exit()
     delete this.wllamas[options.id]
+    delete this.completionAbortControllers[options.id]
   }
 
   async releaseAllContexts(): Promise<void> {
     await Promise.allSettled(Object.keys(this.wllamas).map(key => this.releaseContext({ id: Number(key) })))
   }
 
+  async tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[]; }> {
+    const wllama = this.wllamas[options.id]
+    const tokens = await wllama.tokenize(options.text, options.specialTokens)
+    return {
+      tokens
+    }
+  }
 
+  async detokenize(options: { id: number; tokens: number[]; }): Promise<{ text: string }> {
+    const wllama = this.wllamas[options.id]
+    const uint8array = await wllama.detokenize(options.tokens)
+    return { text: new TextDecoder().decode(uint8array) }
+  }
 }

@@ -1,3 +1,5 @@
+import type { Token } from 'node-llama-cpp'
+
 import type {
   CapacitorLlamaPlugin,
   CompletionParams,
@@ -10,6 +12,7 @@ import type {
 export class ElectronLlama implements CapacitorLlamaPlugin {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   contexts: Record<number, import('node-llama-cpp').LlamaContext> = {}
+  completionAbortControllers: Record<number, AbortController> = {}
 
   async completion(options: { id: number; params: CompletionParams; }): Promise<NativeCompletionResult> {
     const { id, params } = options
@@ -46,14 +49,25 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
       prompt = lastMessage.content
     }
     if (!prompt) throw new Error('prompt missing')
-    const result = await session.prompt(prompt)
+    const abortController = new AbortController()
+    this.completionAbortControllers[id] = abortController
+    const result = await session.prompt(prompt, { maxTokens: options.params.n_predict, signal: abortController.signal }).finally(() => {
+      delete this.completionAbortControllers[id]
+    })
+    
     session.sequence.dispose()
     session.dispose()
+  
     return {
       content: result,
       text: result,
       reasoning_content: '',
     }
+  }
+
+  async stopCompletion(options: { id: number; }): Promise<void> {
+    const controller = this.completionAbortControllers[options.id]
+    if (controller) controller.abort()
   }
 
   async initContext(options: ContextParams & { id: number; }): Promise<NativeLlamaContext> {
@@ -106,9 +120,25 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     }
     !context.disposed && await context.dispose()
     delete this.contexts[options.id]
+    delete this.completionAbortControllers[options.id]
   }
 
   async releaseAllContexts(): Promise<void> {
     await Promise.allSettled(Object.keys(this.contexts).map(key => this.releaseContext({ id: Number(key) })))
+  }
+
+  async detokenize(options: { id: number; tokens: number[]; }): Promise<{ text: string }> {
+    const context = this.contexts[options.id]
+    // TODO: is this typecasting safe?
+    return {
+      text: context.model.detokenize(options.tokens as Token[], true)
+    }
+  }
+
+  async tokenize(options: { id: number; text: string; specialTokens?: boolean; }): Promise<{ tokens: number[]; }> {
+    const context = this.contexts[options.id]
+    return {
+      tokens: context.model.tokenize(options.text, options.specialTokens)
+    }
   }
 }

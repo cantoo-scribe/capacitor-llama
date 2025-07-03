@@ -13,6 +13,7 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "initContext", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "releaseContext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopCompletion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "releaseAllContexts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getFormattedChat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "completion", returnType: CAPPluginReturnPromise)
@@ -44,6 +45,19 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             CAPLlama.releaseContext(contextId)
+            call.resolve()
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
+        }
+    }
+    
+    @objc func stopCompletion(_ call: CAPPluginCall) {
+        do {
+            guard let contextId = call.getDouble("id") else {
+                call.reject("Missing required parameter 'contextId'.")
+                return
+            }
+            CAPLlama.stopCompletion(contextId)
             call.resolve()
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")
@@ -111,6 +125,48 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject(error.reason ?? "Unknown error")
         } catch {
             call.reject(error.localizedDescription)
+        }
+    }
+
+    @objc func tokenize(_ call: CAPPluginCall) {
+        do {
+            guard let contextId = call.getDouble("id") else {
+                call.reject("Missing required parameter 'contextId'.")
+                return
+            }
+            guard let text = call.getString("text") else {
+                call.reject("Missing required parameter 'text'.")
+                return
+            }
+            let result = CAPLlama.tokenize(contextId, text: text)
+             if let resultDict = result as? [String: Any] {
+                call.resolve(resultDict)
+            } else {
+                call.reject("Invalid result format from RNLlama.tokenize")
+            }
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
+        }
+    }
+
+    @objc func detokenize(_ call: CAPPluginCall) {
+        do {
+            guard let contextId = call.getDouble("id") else {
+                call.reject("Missing required parameter 'contextId'.")
+                return
+            }
+            guard let tokens = call.getArray("text") else {
+                call.reject("Missing required parameter 'text'.")
+                return
+            }
+            let result = CAPLlama.detokenize(contextId, tokens: tokens)
+             if let resultDict = result as? [String: Any] {
+                call.resolve(resultDict)
+            } else {
+                call.reject("Invalid result format from RNLlama.detokenize")
+            }
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
         }
     }
 }

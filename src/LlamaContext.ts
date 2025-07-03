@@ -50,4 +50,16 @@ export class LlamaContext {
   async release(): Promise<void> {
     await CapacitorLlama.releaseContext({ id: this.id })
   }
+
+  async stopCompletion(): Promise<void> {
+    await CapacitorLlama.stopCompletion({ id: this.id })
+  }
+
+  async tokenize(text: string, specialTokens = false): Promise<{ tokens: number[]; }> {
+    return CapacitorLlama.tokenize({ id: this.id, text, specialTokens })
+  }
+
+  async detokenize(tokens: number[]): Promise<{ text: string }> {
+    return CapacitorLlama.detokenize({ id: this.id, tokens })
+  }
 }

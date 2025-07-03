@@ -56,7 +56,7 @@ public class LlamaContext {
 
     // private DeviceEventManagerModule.RCTDeviceEventEmitter eventEmitter;
 
-    public LlamaContext(int id, JSObject params/* ReactApplicationContext reactContext, ReadableMap params */) {
+    public LlamaContext(int id, JSObject params) {
         // if (LlamaContext.isArchNotSupported()) {
         //   throw new IllegalStateException("Only 64-bit architectures are supported");
         // }
@@ -120,7 +120,6 @@ public class LlamaContext {
             throw new IllegalStateException("Failed to initialize context");
         }
         this.modelDetails = loadModelDetails(this.context);
-        // this.reactContext = reactContext;
     }
 
     public void interruptLoad() {
@@ -353,19 +352,24 @@ public class LlamaContext {
     //   return isPredicting(this.context);
     // }
 
-    // public WritableMap tokenize(String text) {
-    //   WritableMap result = Arguments.createMap();
-    //   result.putArray("tokens", tokenize(this.context, text));
-    //   return result;
-    // }
+     public JSObject tokenize(String text) {
+       JSObject result = new JSObject();
+       result.put("tokens", tokenize(this.context, text));
+       return result;
+     }
 
-    // public String detokenize(ReadableArray tokens) {
-    //   int[] toks = new int[tokens.size()];
-    //   for (int i = 0; i < tokens.size(); i++) {
-    //     toks[i] = (int) tokens.getDouble(i);
-    //   }
-    //   return detokenize(this.context, toks);
-    // }
+    public String detokenize(JSObject params) {
+        try{
+            JSONArray tokens = params.getJSONArray("tokens");
+            int[] toks = new int[tokens.length()];
+            for (int i = 0; i < tokens.length(); i++) {
+                toks[i] = (int) tokens.getDouble(i);
+            }
+            return detokenize(this.context, toks);
+        }catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     // public WritableMap getEmbedding(String text, ReadableMap params) {
     //   if (isEmbeddingEnabled(this.context) == false) {
@@ -588,8 +592,8 @@ public class LlamaContext {
     );
     protected static native void stopCompletion(long contextPtr);
     // protected static native boolean isPredicting(long contextPtr);
-    // protected static native WritableArray tokenize(long contextPtr, String text);
-    // protected static native String detokenize(long contextPtr, int[] tokens);
+    protected static native JSArray tokenize(long contextPtr, String text);
+    protected static native String detokenize(long contextPtr, int[] tokens);
     // protected static native boolean isEmbeddingEnabled(long contextPtr);
     // protected static native WritableMap embedding(
     //   long contextPtr,

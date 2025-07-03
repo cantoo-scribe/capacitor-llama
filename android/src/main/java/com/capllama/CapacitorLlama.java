@@ -243,108 +243,50 @@ public class CapacitorLlama {
         // tasks.remove(this);
         // tasks.put(task, "completion-" + contextId);
     }
-    // public void stopCompletion(double id, final Promise promise) {
-    //   final int contextId = (int) id;
-    //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
-    //     private Exception exception;
+     public void stopCompletion(double id) {
+       final int contextId = (int) id;
+         try {
+             LlamaContext context = contexts.get(contextId);
+             if (context == null) {
+                 throw new Exception("Context not found");
+             }
+             context.stopCompletion();
+         } catch (Exception e) {
 
-    //     @Override
-    //     protected Void doInBackground(Void... voids) {
-    //       try {
-    //         LlamaContext context = contexts.get(contextId);
-    //         if (context == null) {
-    //           throw new Exception("Context not found");
-    //         }
-    //         context.stopCompletion();
-    //         AsyncTask completionTask = null;
-    //         for (AsyncTask task : tasks.keySet()) {
-    //           if (tasks.get(task).equals("completion-" + contextId)) {
-    //             task.get();
-    //             break;
-    //           }
-    //         }
-    //       } catch (Exception e) {
-    //         exception = e;
-    //       }
-    //       return null;
-    //     }
+         }
+     }
 
-    //     @Override
-    //     protected void onPostExecute(Void result) {
-    //       if (exception != null) {
-    //         promise.reject(exception);
-    //         return;
-    //       }
-    //       promise.resolve(result);
-    //       tasks.remove(this);
-    //     }
-    //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    //   tasks.put(task, "stopCompletion-" + contextId);
-    // }
+     public JSObject tokenize(final JSObject params) {
+        final int contextId = (int) params.getInteger("id", -1);
+        try {
+            LlamaContext context = contexts.get(contextId);
+            if (context == null) {
+                throw new Exception("Context not found");
+            }
+            String text = params.getString("text");
+            return context.tokenize(text);
+        } catch (Exception e) {
+            Log.e(NAME, "Failed tokenize", e);
+            return null;
+        }
+     }
 
-    // public void tokenize(double id, final String text, final Promise promise) {
-    //   final int contextId = (int) id;
-    //   AsyncTask task = new AsyncTask<Void, Void, WritableMap>() {
-    //     private Exception exception;
-
-    //     @Override
-    //     protected WritableMap doInBackground(Void... voids) {
-    //       try {
-    //         LlamaContext context = contexts.get(contextId);
-    //         if (context == null) {
-    //           throw new Exception("Context not found");
-    //         }
-    //         return context.tokenize(text);
-    //       } catch (Exception e) {
-    //         exception = e;
-    //       }
-    //       return null;
-    //     }
-
-    //     @Override
-    //     protected void onPostExecute(WritableMap result) {
-    //       if (exception != null) {
-    //         promise.reject(exception);
-    //         return;
-    //       }
-    //       promise.resolve(result);
-    //       tasks.remove(this);
-    //     }
-    //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    //   tasks.put(task, "tokenize-" + contextId);
-    // }
-
-    // public void detokenize(double id, final ReadableArray tokens, final Promise promise) {
-    //   final int contextId = (int) id;
-    //   AsyncTask task = new AsyncTask<Void, Void, String>() {
-    //     private Exception exception;
-
-    //     @Override
-    //     protected String doInBackground(Void... voids) {
-    //       try {
-    //         LlamaContext context = contexts.get(contextId);
-    //         if (context == null) {
-    //           throw new Exception("Context not found");
-    //         }
-    //         return context.detokenize(tokens);
-    //       } catch (Exception e) {
-    //         exception = e;
-    //       }
-    //       return null;
-    //     }
-
-    //     @Override
-    //     protected void onPostExecute(String result) {
-    //       if (exception != null) {
-    //         promise.reject(exception);
-    //         return;
-    //       }
-    //       promise.resolve(result);
-    //       tasks.remove(this);
-    //     }
-    //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    //   tasks.put(task, "detokenize-" + contextId);
-    // }
+    public JSObject detokenize(final JSObject params) {
+        final int contextId = (int) params.getInteger("id", -1);
+        try {
+            LlamaContext context = contexts.get(contextId);
+            if (context == null) {
+                throw new Exception("Context not found");
+            }
+            String text = context.detokenize(params);
+            JSObject result = new JSObject();
+            result.put("text", text);
+            return result;
+        } catch (Exception e) {
+            Log.e(NAME, "Failed detokenize", e);
+            return null;
+        }
+    }
 
     // public void embedding(double id, final String text, final ReadableMap params, final Promise promise) {
     //   final int contextId = (int) id;
@@ -567,31 +509,6 @@ public class CapacitorLlama {
             context.release();
         }
         contexts.clear();
-
-    //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
-    //     private Exception exception;
-
-    //     @Override
-    //     protected Void doInBackground(Void... voids) {
-    //       try {
-    //         onHostDestroy();
-    //       } catch (Exception e) {
-    //         exception = e;
-    //       }
-    //       return null;
-    //     }
-
-    //     @Override
-    //     protected void onPostExecute(Void result) {
-    //       if (exception != null) {
-    //         promise.reject(exception);
-    //         return;
-    //       }
-    //       promise.resolve(null);
-    //       tasks.remove(this);
-    //     }
-    //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    //   tasks.put(task, "releaseAllContexts");
     }
 
     // @Override

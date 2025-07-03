@@ -176,12 +176,13 @@ static dispatch_queue_t llamaDQueue;
     return result;
 }
 
-+ (NSString *)detokenize:(double)contextId tokens:(NSArray *)tokens {
++ (NSDictionary *)detokenize:(double)contextId tokens:(NSArray *)tokens {
     LlamaContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
     if (context == nil) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context not found" userInfo:nil];
     }
-    return [context detokenize:tokens];
+    NSDictionary *result = @{ @"text": [context detokenize:tokens] };
+    return result;
 }
 
 + (NSDictionary *)embedding:(double)contextId text:(NSString *)text params:(NSDictionary *)params {
