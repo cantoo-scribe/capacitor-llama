@@ -12,7 +12,8 @@
 + (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams;
 + (void)stopCompletion:(double)contextId;
 + (NSDictionary *)tokenize:(double)contextId text:(NSString *)text;
-+ (NSString *)detokenize:(double)contextId tokens:(NSArray *)tokens;
++ (NSDictionary *)detokenize:(double)contextId tokens:(NSArray *)tokens;
++ (NSDictionary *)getVocab:(double)contextId;
 + (NSDictionary *)embedding:(double)contextId text:(NSString *)text params:(NSDictionary *)params;
 + (NSString *)bench:(double)contextId pp:(int)pp tg:(int)tg pl:(int)pl nr:(int)nr;
 + (void)applyLoraAdapters:(double)contextId withLoraAdapters:(NSArray *)loraAdapters;

@@ -20,6 +20,7 @@ npx cap sync
 * [`releaseAllContexts()`](#releaseallcontexts)
 * [`tokenize(...)`](#tokenize)
 * [`detokenize(...)`](#detokenize)
+* [`getVocab(...)`](#getvocab)
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
@@ -122,12 +123,27 @@ detokenize(options: { id: number; tokens: number[]; }) => Promise<{ text: string
 --------------------
 
 
+### getVocab(...)
+
+```typescript
+getVocab(options: { id: number; }) => Promise<{ vocab: string[]; }>
+```
+
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: number; }</code> |
+
+**Returns:** <code>Promise&lt;{ vocab: string[]; }&gt;</code>
+
+--------------------
+
+
 ### Type Aliases
 
 
 #### NativeLlamaContext
 
-<code>{ model: { desc: string; size: number; nEmbd: number; nParams: number; chatTemplates: { llamaChat: boolean; // Chat template in llama-chat.cpp minja: { // Chat template supported by minja.hpp default: boolean; defaultCaps: { tools: boolean; toolCalls: boolean; toolResponses: boolean; systemRole: boolean; parallelToolCalls: boolean; toolCallId: boolean; }; toolUse: boolean; toolUseCaps: { tools: boolean; toolCalls: boolean; toolResponses: boolean; systemRole: boolean; parallelToolCalls: boolean; toolCallId: boolean; }; }; }; metadata: <a href="#record">Record</a>&lt;string, unknown&gt;; isChatTemplateSupported: boolean; // Deprecated }; /** * Loaded library name for Android */ androidLib?: string; gpu: boolean; reasonNoGPU: string; }</code>
+<code>{ model: { desc: string; size: number; nEmbd: number; nParams: number; nVocab: number; chatTemplates: { llamaChat: boolean; // Chat template in llama-chat.cpp minja: { // Chat template supported by minja.hpp default: boolean; defaultCaps: { tools: boolean; toolCalls: boolean; toolResponses: boolean; systemRole: boolean; parallelToolCalls: boolean; toolCallId: boolean; }; toolUse: boolean; toolUseCaps: { tools: boolean; toolCalls: boolean; toolResponses: boolean; systemRole: boolean; parallelToolCalls: boolean; toolCallId: boolean; }; }; }; metadata: <a href="#record">Record</a>&lt;string, unknown&gt;; isChatTemplateSupported: boolean; // Deprecated }; /** * Loaded library name for Android */ androidLib?: string; gpu: boolean; reasonNoGPU: string; }</code>
 
 
 #### Record

@@ -16,7 +16,10 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopCompletion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "releaseAllContexts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getFormattedChat", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "completion", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "completion", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "tokenize", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "detokenize", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getVocab", returnType: CAPPluginReturnPromise)
     ]
 
     @objc func initContext(_ call: CAPPluginCall) {
@@ -30,7 +33,7 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
             if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
-                call.reject("Invalid result format from RNLlama.initContext")
+                call.reject("Invalid result format from CapacitorLlamaPlugin.initContext")
             }
 
         } catch let error as NSException {
@@ -85,7 +88,7 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
             if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
-                call.reject("Invalid result format from RNLlama.initContext")
+                call.reject("Invalid result format from CapacitorLlamaPlugin.initContext")
             }
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")
@@ -119,7 +122,7 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
             if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
-                call.reject("Invalid result format from RNLlama.initContext")
+                call.reject("Invalid result format from CapacitorLlamaPlugin.initContext")
             }
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")
@@ -142,7 +145,7 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
              if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
-                call.reject("Invalid result format from RNLlama.tokenize")
+                call.reject("Invalid result format from CapacitorLlamaPlugin.tokenize")
             }
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")
@@ -155,15 +158,32 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Missing required parameter 'contextId'.")
                 return
             }
-            guard let tokens = call.getArray("text") else {
-                call.reject("Missing required parameter 'text'.")
+            guard let tokens = call.getArray("tokens") else {
+                call.reject("Missing required parameter 'tokens'.")
                 return
             }
             let result = CAPLlama.detokenize(contextId, tokens: tokens)
              if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
-                call.reject("Invalid result format from RNLlama.detokenize")
+                call.reject("Invalid result format from CapacitorLlamaPlugin.detokenize")
+            }
+        } catch let error as NSException {
+            call.reject(error.reason ?? "Unknown error")
+        }
+    }
+
+    @objc func getVocab(_ call: CAPPluginCall) {
+        do {
+            guard let contextId = call.getDouble("id") else {
+                call.reject("Missing required parameter 'contextId'.")
+                return
+            }
+            let result = CAPLlama.getVocab(contextId)
+             if let resultDict = result as? [String: Any] {
+                call.resolve(resultDict)
+            } else {
+                call.reject("Invalid result format from CapacitorLlamaPlugin.tokenize")
             }
         } catch let error as NSException {
             call.reject(error.reason ?? "Unknown error")

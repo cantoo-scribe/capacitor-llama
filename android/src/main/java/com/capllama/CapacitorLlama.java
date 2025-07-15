@@ -288,6 +288,20 @@ public class CapacitorLlama {
         }
     }
 
+    public JSObject getVocab(final JSObject params) {
+        final int contextId = (int) params.getInteger("id", -1);
+        try {
+            LlamaContext context = contexts.get(contextId);
+            if (context == null) {
+                throw new Exception("Context not found");
+            }
+            return context.getVocab();
+        } catch (Exception e) {
+            Log.e(NAME, "Failed tokenize", e);
+            return null;
+        }
+    }
+
     // public void embedding(double id, final String text, final ReadableMap params, final Promise promise) {
     //   final int contextId = (int) id;
     //   AsyncTask task = new AsyncTask<Void, Void, WritableMap>() {

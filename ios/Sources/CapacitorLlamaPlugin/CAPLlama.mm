@@ -181,7 +181,19 @@ static dispatch_queue_t llamaDQueue;
     if (context == nil) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context not found" userInfo:nil];
     }
-    NSDictionary *result = @{ @"text": [context detokenize:tokens] };
+    NSString *text = [context detokenize:tokens];
+    NSDictionary *result = @{ @"text": text };
+    return result;
+}
+
++ (NSDictionary *)getVocab:(double)contextId {
+    LlamaContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        @throw [NSException exceptionWithName:@"llama_error" reason:@"Context not found" userInfo:nil];
+    }
+    NSMutableArray *tokens = [context getVocab];
+    NSDictionary *result = @{ @"vocab": tokens };
+    [tokens release];
     return result;
 }
 

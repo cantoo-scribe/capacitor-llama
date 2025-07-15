@@ -38,6 +38,7 @@
 - (void)stopCompletion;
 - (NSArray *)tokenize:(NSString *)text;
 - (NSString *)detokenize:(NSArray *)tokens;
+- (NSArray *)getVocab;
 - (NSDictionary *)embedding:(NSString *)text params:(NSDictionary *)params;
 - (NSDictionary *)getFormattedChatWithJinja:(NSString *)messages
     withChatTemplate:(NSString *)chatTemplate

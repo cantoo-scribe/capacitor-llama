@@ -61,4 +61,10 @@ public class CapacitorLlamaPlugin extends Plugin {
         JSObject res = implementation.tokenize(call.getData());
         call.resolve(res);
     }
+
+    @PluginMethod
+    public void getVocab(PluginCall call) {
+        JSObject res = implementation.getVocab(call.getData());
+        call.resolve(res);
+    }
 }

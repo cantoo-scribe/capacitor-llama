@@ -108,6 +108,7 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
         // TODO: is this the right value?
         nParams: model.trainContextSize,
         size: model.size,
+        nVocab: model.tokenizer.length
       }
     }
   }
@@ -139,6 +140,19 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     const context = this.contexts[options.id]
     return {
       tokens: context.model.tokenize(options.text, options.specialTokens)
+    }
+  }
+
+  async getVocab(options: { id: number; }): Promise<{ vocab: string[]; }> {
+    const context = this.contexts[options.id]
+    const vocab: string[] = []
+    for(const token of context.model.iterateAllTokens()) {
+      const rawText = context.model.detokenize([token]);
+      vocab.push(rawText)
+    }
+
+    return {
+      vocab
     }
   }
 }

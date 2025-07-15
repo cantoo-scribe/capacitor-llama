@@ -31,6 +31,49 @@ static void capllama_log_callback_default(lm_ggml_log_level level, const char * 
     else __android_log_print(ANDROID_LOG_DEFAULT, TAG, fmt, data);
 }
 
+// Replace invalid UTF-8 sequences with U+FFFD
+std::string sanitize_utf8(const std::string& input) {
+    std::string output;
+    size_t i = 0;
+
+    while (i < input.size()) {
+        unsigned char c = input[i];
+
+        if (c <= 0x7F) {
+            // ASCII
+            output += c;
+            i += 1;
+        } else if ((c >> 5) == 0x6 && i + 1 < input.size() &&  // 2-byte
+                   (input[i + 1] & 0xC0) == 0x80) {
+            output += input[i];
+            output += input[i + 1];
+            i += 2;
+        } else if ((c >> 4) == 0xE && i + 2 < input.size() &&  // 3-byte
+                   (input[i + 1] & 0xC0) == 0x80 &&
+                   (input[i + 2] & 0xC0) == 0x80) {
+            output += input[i];
+            output += input[i + 1];
+            output += input[i + 2];
+            i += 3;
+        } else if ((c >> 3) == 0x1E && i + 3 < input.size() && // 4-byte
+                   (input[i + 1] & 0xC0) == 0x80 &&
+                   (input[i + 2] & 0xC0) == 0x80 &&
+                   (input[i + 3] & 0xC0) == 0x80) {
+            output += input[i];
+            output += input[i + 1];
+            output += input[i + 2];
+            output += input[i + 3];
+            i += 4;
+        } else {
+            // Invalid byte — replace with U+FFFD (UTF-8: 0xEF 0xBF 0xBD)
+            output += "\xEF\xBF\xBD";
+            i += 1;
+        }
+    }
+
+    return output;
+}
+
 extern "C" {
 
 // Method to create WritableMap
@@ -138,11 +181,12 @@ static inline void pushDouble(JNIEnv *env, jobject arr, double value) {
 // Method to push string into WritableArray
 static inline void pushString(JNIEnv *env, jobject arr, const char *value) {
     jclass mapClass = env->FindClass("com/getcapacitor/JSArray");
-    jmethodID pushStringMethod = env->GetMethodID(mapClass, "put", "(Ljava/lang/String;)Lcom/getcapacitor/JSArray;");
+    jmethodID pushStringMethod = env->GetMethodID(mapClass, "put", "(Ljava/lang/Object;)Lorg/json/JSONArray;");
 
-    jstring jValue = env->NewStringUTF(value);
-    // env->CallVoidMethod(arr, pushStringMethod, jValue);
-    env->CallObjectMethod(arr, pushStringMethod, value);
+    std::string clean = sanitize_utf8(value);
+    jstring jValue = env->NewStringUTF(clean.c_str());
+
+    env->CallObjectMethod(arr, pushStringMethod, jValue);
 }
 
 // Method to push WritableMap into WritableArray
@@ -448,10 +492,15 @@ Java_com_capllama_LlamaContext_loadModelDetails(
     char desc[1024];
     llama_model_desc(llama->model, desc, sizeof(desc));
 
+    const llama_model * model = llama_get_model(llama->ctx);
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+    const int n_vocab = llama_vocab_n_tokens(vocab);
+
     putString(env, result, "desc", desc);
     putDouble(env, result, "size", llama_model_size(llama->model));
     putDouble(env, result, "nEmbd", llama_model_n_embd(llama->model));
     putDouble(env, result, "nParams", llama_model_n_params(llama->model));
+    putDouble(env, result, "nVocab", n_vocab);
     auto chat_templates = createWriteableMap(env);
     putBoolean(env, chat_templates, "llamaChat", llama->validateModelChatTemplate(false, nullptr));
 
@@ -1060,6 +1109,23 @@ Java_com_capllama_LlamaContext_detokenize(
     env->ReleaseIntArrayElements(tokens, tokens_ptr, 0);
 
     return env->NewStringUTF(text.c_str());
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_capllama_LlamaContext_getVocab(
+        JNIEnv *env, jobject thiz, jlong context_ptr) {
+    UNUSED(thiz);
+    auto llama = context_map[(long) context_ptr];
+
+    const llama_vocab * vocab = llama_model_get_vocab(llama->model);
+    const int n_vocab = llama_vocab_n_tokens(vocab);
+    auto result = createWritableArray(env);
+    for (int i = 0; i < n_vocab; ++i) {
+        std::string piece = common_token_to_piece(llama->ctx, i);
+        pushString(env, result, piece.c_str());
+    }
+
+    return result;
 }
 
 JNIEXPORT jboolean JNICALL

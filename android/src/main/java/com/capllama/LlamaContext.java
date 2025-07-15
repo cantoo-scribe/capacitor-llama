@@ -371,6 +371,12 @@ public class LlamaContext {
         }
     }
 
+    public JSObject getVocab() {
+        JSObject result = new JSObject();
+        result.put("vocab", getVocab(this.context));
+        return result;
+    }
+
     // public WritableMap getEmbedding(String text, ReadableMap params) {
     //   if (isEmbeddingEnabled(this.context) == false) {
     //     throw new IllegalStateException("Embedding is not enabled");
@@ -432,32 +438,32 @@ public class LlamaContext {
         // TODO: Add runtime check for cpu features
         if (LlamaContext.isArm64V8a()) {
             if (hasDotProd && hasI8mm) {
-                Log.d(NAME, "Loading librnllama_v8_2_dotprod_i8mm.so");
-                System.loadLibrary("rnllama_v8_2_dotprod_i8mm");
-                loadedLibrary = "rnllama_v8_2_dotprod_i8mm";
+                Log.d(NAME, "Loading libcapllama_v8_2_dotprod_i8mm.so");
+                System.loadLibrary("capllama_v8_2_dotprod_i8mm");
+                loadedLibrary = "capllama_v8_2_dotprod_i8mm";
             } else if (hasDotProd) {
-                Log.d(NAME, "Loading librnllama_v8_2_dotprod.so");
-                System.loadLibrary("rnllama_v8_2_dotprod");
-                loadedLibrary = "rnllama_v8_2_dotprod";
+                Log.d(NAME, "Loading libcapllama_v8_2_dotprod.so");
+                System.loadLibrary("capllama_v8_2_dotprod");
+                loadedLibrary = "capllama_v8_2_dotprod";
             } else if (hasI8mm) {
-                Log.d(NAME, "Loading librnllama_v8_2_i8mm.so");
-                System.loadLibrary("rnllama_v8_2_i8mm");
-                loadedLibrary = "rnllama_v8_2_i8mm";
+                Log.d(NAME, "Loading libcapllama_v8_2_i8mm.so");
+                System.loadLibrary("capllama_v8_2_i8mm");
+                loadedLibrary = "capllama_v8_2_i8mm";
             } else if (hasFp16) {
-                Log.d(NAME, "Loading librnllama_v8_2.so");
-                System.loadLibrary("rnllama_v8_2");
-                loadedLibrary = "rnllama_v8_2";
+                Log.d(NAME, "Loading libcapllama_v8_2.so");
+                System.loadLibrary("capllama_v8_2");
+                loadedLibrary = "capllama_v8_2";
             } else {
-                Log.d(NAME, "Loading default librnllama_v8.so");
-                System.loadLibrary("rnllama_v8");
-                loadedLibrary = "rnllama_v8";
+                Log.d(NAME, "Loading default libcapllama_v8.so");
+                System.loadLibrary("capllama_v8");
+                loadedLibrary = "capllama_v8";
             }
-            //  Log.d(NAME, "Loading librnllama_v8_7.so with runtime feature detection");
-            //  System.loadLibrary("rnllama_v8_7");
+            //  Log.d(NAME, "Loading libcapllama_v8_7.so with runtime feature detection");
+            //  System.loadLibrary("capllama_v8_7");
         } else if (LlamaContext.isX86_64()) {
-            Log.d(NAME, "Loading librnllama_x86_64.so");
-            System.loadLibrary("rnllama_x86_64");
-            loadedLibrary = "rnllama_x86_64";
+            Log.d(NAME, "Loading libcapllama_x86_64.so");
+            System.loadLibrary("capllama_x86_64");
+            loadedLibrary = "capllama_x86_64";
         } else {
             Log.d(NAME, "ARM32 is not supported, skipping loading library");
         }
@@ -594,6 +600,7 @@ public class LlamaContext {
     // protected static native boolean isPredicting(long contextPtr);
     protected static native JSArray tokenize(long contextPtr, String text);
     protected static native String detokenize(long contextPtr, int[] tokens);
+    protected static native JSArray getVocab(long contextPtr);
     // protected static native boolean isEmbeddingEnabled(long contextPtr);
     // protected static native WritableMap embedding(
     //   long contextPtr,

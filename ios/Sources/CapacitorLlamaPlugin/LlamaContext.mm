@@ -307,6 +307,7 @@
         @"size": @(llama_model_size(llama->model)),
         @"nEmbd": @(llama_model_n_embd(llama->model)),
         @"nParams": @(llama_model_n_params(llama->model)),
+        @"nVocab": @(llama_vocab_n_tokens(llama_model_get_vocab(llama->model))),
         @"chatTemplates": @{
             @"llamaChat": @(llama->validateModelChatTemplate(false, nullptr)),
             @"minja": @{
@@ -679,7 +680,6 @@
         @"prompt_per_token_ms": @(timings.t_p_eval_ms / timings.n_p_eval),
         @"prompt_per_second": @(1e3 / timings.t_p_eval_ms * timings.n_p_eval),
         @"predicted_n": @(timings.n_eval),
-        @"predicted_n": @(timings.n_eval),
         @"predicted_ms": @(timings.t_eval_ms),
         @"predicted_per_token_ms": @(timings.t_eval_ms / timings.n_eval),
         @"predicted_per_second": @(1e3 / timings.t_eval_ms * timings.n_eval),
@@ -706,7 +706,26 @@
         toks.push_back([tok intValue]);
     }
     const std::string text = rnllama::tokens_to_str(llama->ctx, toks.cbegin(), toks.cend());
-    return [NSString stringWithUTF8String:text.c_str()];
+    
+    NSData *data = [NSData dataWithBytes:text.data() length:text.size()];
+    NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return result ?: @"�";
+}
+
+- (NSArray *)getVocab {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(llama->model));
+    NSMutableArray *vocab = [[NSMutableArray alloc] initWithCapacity:n_vocab];
+    for (int i = 0; i < n_vocab; i++) {
+        const std::string token = common_token_to_piece(llama->ctx, i);
+        // TODO: is this checking necessary?
+//        if (token.empty()) {
+//            continue;
+//        }
+        NSData *data = [NSData dataWithBytes:token.data() length:token.size()];
+        NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        [vocab addObject:(result ?: @"�")];
+    }
+    return vocab;
 }
 
 - (NSDictionary *)embedding:(NSString *)text params:(NSDictionary *)params {

@@ -4,6 +4,7 @@ export type NativeLlamaContext = {
     size: number;
     nEmbd: number;
     nParams: number;
+    nVocab: number;
     chatTemplates: {
       llamaChat: boolean; // Chat template in llama-chat.cpp
       minja: {
@@ -252,6 +253,8 @@ export interface CapacitorLlamaPlugin {
   tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[] }>
 
   detokenize(options: { id: number; tokens: number[] }): Promise<{ text: string }>
+
+  getVocab(options: { id: number }): Promise<{ vocab: string[] }>
 }
 
 export type NativeContextParams = {

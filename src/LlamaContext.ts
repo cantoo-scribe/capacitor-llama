@@ -62,4 +62,9 @@ export class LlamaContext {
   async detokenize(tokens: number[]): Promise<{ text: string }> {
     return CapacitorLlama.detokenize({ id: this.id, tokens })
   }
+
+  async getVocab(): Promise<{ vocab: string[] }> {
+    return CapacitorLlama.getVocab({ id: this.id })
+  }
+
 }

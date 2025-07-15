@@ -47,9 +47,11 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
           },
         },
         metadata: wllamaInstance.getModelMetadata().meta, // model.fileInfo.metadata,
-        nEmbd: 0,
+        nEmbd: wllamaInstance.getLoadedContextInfo().n_embd,
+        // TODO: how to get the number of parameters?
         nParams: 0,
-        size: 0,
+        size: (await wllamaInstance.modelManager.getModels()).find(model => model.url === options.model)?.size || 0,
+        nVocab: wllamaInstance.getLoadedContextInfo().n_vocab
       }
     }
   }
@@ -139,5 +141,16 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
     const wllama = this.wllamas[options.id]
     const uint8array = await wllama.detokenize(options.tokens)
     return { text: new TextDecoder().decode(uint8array) }
+  }
+
+  async getVocab(options: { id: number; }): Promise<{ vocab: string[]; }> {
+    const wllama = this.wllamas[options.id]
+    const vocab = await wllama.getVocab().then(tokens => 
+      tokens.map(token => {
+        const decoder = new TextDecoder('utf-8'); // Specify the encoding (default is UTF-8)
+        return decoder.decode(token);
+      })
+    )
+    return { vocab }
   }
 }

@@ -1,5 +1,5 @@
 // @ts-check
-import { LlamaContext } from 'capacitor-llama';
+import { LlamaContext, Llama } from 'capacitor-llama';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
 function showBtn(id) {
@@ -64,11 +64,15 @@ window.loadModel = async () => {
     n_gpu_layers: 0,
     
   })
+
   hideBtn('loadModel')
   showBtn('releaseModel')
-  console.log('loaded: ', JSON.stringify(context.model.metadata))
-  console.log('result', context.id, context.model.desc, context.model.size)
+  console.log('loaded model: ', context.model)
+  console.log('result', context.id, context.model.desc, context.model.size, context.model.nVocab)
 }
+
+// @ts-ignore
+window.getVocab = (p) => Llama.getVocab(p) 
 
 const stopWords = [
   "</s>",
