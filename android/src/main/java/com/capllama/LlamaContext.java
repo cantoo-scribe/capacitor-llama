@@ -239,7 +239,13 @@ public class LlamaContext {
                     JSONArray logit_bias_row = logit_bias_array.getJSONArray(i);
                     logit_bias[i] = new double[logit_bias_row.length()];
                     for (int j = 0; j < logit_bias_row.length(); j++) {
-                        logit_bias[i][j] = logit_bias_row.getDouble(j);
+                        if (logit_bias_row.get(j) instanceof Integer) {
+                            logit_bias[i][j] = logit_bias_row.getInt(j);
+                        } else if (logit_bias_row.get(j) instanceof Double) {
+                            logit_bias[i][j] = logit_bias_row.getDouble(j);
+                        } else if (logit_bias_row.get(j) instanceof Boolean && !logit_bias_row.getBoolean(j)) {
+                            logit_bias[i][j] = Double.NEGATIVE_INFINITY;
+                        }
                     }
                 }
             }

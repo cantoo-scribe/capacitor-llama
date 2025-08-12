@@ -163,7 +163,7 @@ static inline jobject createWritableArray(JNIEnv *env) {
 // Method to push int into WritableArray
 static inline void pushInt(JNIEnv *env, jobject arr, int value) {
     jclass jsArrayClass = env->FindClass("com/getcapacitor/JSArray");
-    jmethodID pushMethod = env->GetMethodID(jsArrayClass, "put", "(I)Lcom/getcapacitor/JSArray;");
+    jmethodID pushMethod = env->GetMethodID(jsArrayClass, "put", "(I)Lorg/json/JSONArray;");
 
     // env->CallVoidMethod(arr, pushMethod, value);
     env->CallObjectMethod(arr, pushMethod, value);
@@ -172,7 +172,7 @@ static inline void pushInt(JNIEnv *env, jobject arr, int value) {
 // Method to push double into WritableArray
 static inline void pushDouble(JNIEnv *env, jobject arr, double value) {
     jclass mapClass = env->FindClass("com/getcapacitor/JSArray");
-    jmethodID pushDoubleMethod = env->GetMethodID(mapClass, "put", "(D)Lcom/getcapacitor/JSArray;");
+    jmethodID pushDoubleMethod = env->GetMethodID(mapClass, "put", "(D)Lorg/json/JSONArray;");
 
     // env->CallVoidMethod(arr, pushDoubleMethod, value);
     env->CallObjectMethod(arr, pushDoubleMethod, value);
@@ -192,7 +192,7 @@ static inline void pushString(JNIEnv *env, jobject arr, const char *value) {
 // Method to push WritableMap into WritableArray
 static inline void pushMap(JNIEnv *env, jobject arr, jobject value) {
     jclass mapClass = env->FindClass("com/getcapacitor/JSArray");
-    jmethodID pushMapMethod = env->GetMethodID(mapClass, "put", "(Lcom/getcapacitor/JSObject;)Lcom/getcapacitor/JSArray;");
+    jmethodID pushMapMethod = env->GetMethodID(mapClass, "put", "(Ljava/lang/Object;)Lorg/json/JSONArray;");
 
     // env->CallVoidMethod(arr, pushMapMethod, value);
     env->CallObjectMethod(arr, pushMapMethod, value);
@@ -890,9 +890,9 @@ Java_com_capllama_LlamaContext_doCompletion(
             llama_token tok = static_cast<llama_token>(doubleArray[0]);
             if (tok >= 0 && tok < n_vocab) {
                 if (doubleArray[1] != 0) {  // If the second element is not false (0)
-                    sparams.logit_bias[tok].bias = doubleArray[1];
+                    sparams.logit_bias.push_back({tok, static_cast<float>(doubleArray[1])});
                 } else {
-                    sparams.logit_bias[tok].bias = -INFINITY;
+                    sparams.logit_bias.push_back({tok, -INFINITY});
                 }
             }
 
@@ -1039,11 +1039,11 @@ Java_com_capllama_LlamaContext_doCompletion(
     putInt(env, timingsResult, "prompt_n", timings_token.n_p_eval);
     putInt(env, timingsResult, "prompt_ms", timings_token.t_p_eval_ms);
     putInt(env, timingsResult, "prompt_per_token_ms", timings_token.t_p_eval_ms / timings_token.n_p_eval);
-    putDouble(env, timingsResult, "prompt_per_second", 1e3 / timings_token.t_p_eval_ms * timings_token.n_p_eval);
+    putDouble(env, timingsResult, "prompt_per_second", 1e3 / (timings_token.t_p_eval_ms ? timings_token.t_p_eval_ms : 1) * timings_token.n_p_eval);
     putInt(env, timingsResult, "predicted_n", timings_token.n_eval);
     putInt(env, timingsResult, "predicted_ms", timings_token.t_eval_ms);
-    putInt(env, timingsResult, "predicted_per_token_ms", timings_token.t_eval_ms / timings_token.n_eval);
-    putDouble(env, timingsResult, "predicted_per_second", 1e3 / timings_token.t_eval_ms * timings_token.n_eval);
+    putInt(env, timingsResult, "predicted_per_token_ms", timings_token.t_eval_ms / (timings_token.n_eval ? timings_token.n_eval : 1));
+    putDouble(env, timingsResult, "predicted_per_second", 1e3 / (timings_token.t_eval_ms ? timings_token.t_eval_ms : 1) * timings_token.n_eval);
 
     putMap(env, result, "timings", timingsResult);
 

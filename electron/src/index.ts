@@ -1,4 +1,4 @@
-import type { Token } from 'node-llama-cpp'
+import type { Token, TokenBias } from 'node-llama-cpp'
 
 import type {
   CapacitorLlamaPlugin,
@@ -18,7 +18,7 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     const { id, params } = options
     // eslint-disable-next-line @typescript-eslint/consistent-type-imports
     const nlc: typeof import("node-llama-cpp") = await Function('return import("node-llama-cpp")')();
-    const { LlamaChatSession } = nlc;
+    const { LlamaChatSession, TokenBias } = nlc;
     const context = this.contexts[id]
     const session = new LlamaChatSession({
       contextSequence: context.getSequence(),
@@ -51,7 +51,15 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     if (!prompt) throw new Error('prompt missing')
     const abortController = new AbortController()
     this.completionAbortControllers[id] = abortController
-    const result = await session.prompt(prompt, { maxTokens: options.params.n_predict, signal: abortController.signal }).finally(() => {
+    let customBias: TokenBias | undefined
+    if(params.logit_bias?.length) {
+      customBias = new TokenBias(context.model.tokenizer)
+      params.logit_bias.forEach(([tk, prob]) => {
+        customBias.set(tk as Token, prob === false ? 'never' : prob)
+      })
+    }
+
+    const result = await session.prompt(prompt, { maxTokens: options.params.n_predict, signal: abortController.signal, tokenBias: customBias }).finally(() => {
       delete this.completionAbortControllers[id]
     })
     

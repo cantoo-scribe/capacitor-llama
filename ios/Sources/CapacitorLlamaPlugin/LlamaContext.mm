@@ -555,9 +555,11 @@
                 llama_token tok = [el[0] intValue];
                 if (tok >= 0 && tok < n_vocab) {
                     if ([el[1] isKindOfClass:[NSNumber class]]) {
-                        sparams.logit_bias[tok].bias = [el[1] doubleValue];
-                    } else if ([el[1] isKindOfClass:[NSNumber class]] && ![el[1] boolValue]) {
-                        sparams.logit_bias[tok].bias = -INFINITY;
+                        if (![el[1] boolValue]) {
+                            sparams.logit_bias.push_back({ tok, -INFINITY });
+                        } else {
+                            sparams.logit_bias.push_back({tok, static_cast<float>([el[1] doubleValue])});
+                        }
                     }
                 }
             }
@@ -676,14 +678,15 @@
     result[@"tokens_cached"] = @(llama->n_past);
     result[@"timings"] = @{
         @"prompt_n": @(timings.n_p_eval),
-        @"prompt_ms": @(timings.t_p_eval_ms),
+        @"prompt_ms": @(timings.t_p_eval_ms || 1),
         @"prompt_per_token_ms": @(timings.t_p_eval_ms / timings.n_p_eval),
-        @"prompt_per_second": @(1e3 / timings.t_p_eval_ms * timings.n_p_eval),
+        @"prompt_per_second": @(1e3 / (timings.t_p_eval_ms || 1) * timings.n_p_eval),
         @"predicted_n": @(timings.n_eval),
-        @"predicted_ms": @(timings.t_eval_ms),
-        @"predicted_per_token_ms": @(timings.t_eval_ms / timings.n_eval),
-        @"predicted_per_second": @(1e3 / timings.t_eval_ms * timings.n_eval),
+        @"predicted_ms": @((timings.t_eval_ms || 1)),
+        @"predicted_per_token_ms": @((timings.t_eval_ms || 1) / timings.n_eval),
+        @"predicted_per_second": @(1e3 / (timings.t_eval_ms || 1) * timings.n_eval),
     };
+
     return result;
 }
 

@@ -206,7 +206,7 @@ export type NativeCompletionParams = {
    * e.g.`[["Hello, World!",-0.5]]` will reduce the likelihood of all the individual tokens that represent the string `Hello, World!`, just like the `presence_penalty` does.
    * Default: `[]`
    */
-  logit_bias?: number[][];
+  logit_bias?: [number, number | false][];
   /**
    * Set the random number generator (RNG) seed. Default: `-1`, which is a random seed.
    */
@@ -217,6 +217,16 @@ export type NativeCompletionParams = {
 
 export type CompletionParams = Omit<NativeCompletionParams, 'emit_partial_completion' | 'prompt'> &
   CompletionBaseParams;
+
+export type NativeCompletionTokenProbItem = {
+  tok_str: string
+  prob: number
+}
+
+export type NativeCompletionTokenProb = {
+  content: string
+  probs: NativeCompletionTokenProbItem[]
+}
 
 export type NativeCompletionResult = {
   /**
@@ -231,6 +241,8 @@ export type NativeCompletionResult = {
    * Content text (Filtered text by reasoning_content / tool_calls)
    */
   content: string;
+
+  completion_probabilities?: NativeCompletionTokenProb[]
 };
 
 export type FormattedLlama = {
