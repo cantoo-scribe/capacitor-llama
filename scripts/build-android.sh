@@ -48,20 +48,20 @@ cp build-arm64/*.so jniLibs/arm64-v8a/
 rm -rf build-arm64
 
 # Build the Android library (x86_64)
-# cmake -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
-#   -DANDROID_ABI=x86_64 \
-#   -DANDROID_PLATFORM=$ANDROID_PLATFORM \
-#   -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-#   -B build-x86_64
+cmake -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
+  -DANDROID_ABI=x86_64 \
+  -DANDROID_PLATFORM=$ANDROID_PLATFORM \
+  -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+  -B build-x86_64
 
-# cmake --build build-x86_64 --config Release -j $n_cpu
+cmake --build build-x86_64 --config Release -j $n_cpu
 
-# mkdir -p jniLibs/x86_64
+mkdir -p jniLibs/x86_64
 
-# # Copy the library to the example app
-# cp build-x86_64/*.so jniLibs/x86_64/
+# Copy the library to the example app
+cp build-x86_64/*.so jniLibs/x86_64/
 
-# rm -rf build-x86_64
+rm -rf build-x86_64
 
 t1=$(date +%s)
 echo "Total time: $((t1 - t0)) seconds"
