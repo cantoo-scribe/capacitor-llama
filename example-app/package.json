@@ -16,8 +16,7 @@
     "sync:ios": "yarn build && cap sync ios",
     "open:ios": "cap open ios",
     "sync:electron": "yarn build && cap sync @capacitor-community/electron",
-    "open:electron": "cap open @capacitor-community/electron",
-    "reinstall": "rm -rf node_modules && yarn && rm -rf node_modules/capacitor-llama/example-app"
+    "open:electron": "cap open @capacitor-community/electron"
   },
   "dependencies": {
     "@capacitor-community/electron": "^5.0.1",

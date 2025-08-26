@@ -88,6 +88,14 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
         onNewToken(_token, _piece, _currentText, { abortSignal }) {
           if (abort) abortSignal()
         },
+      sampling: {
+        temp: options.params.temperature,
+        n_probs: options.params.n_probs,
+        logit_bias: options.params.logit_bias?.map(arr => ({token: arr[0], bias: arr[1] || -Infinity })),
+        min_p: options.params.min_p,
+        top_p: options.params.top_p,
+        top_k: options.params.top_k,
+      }
       }).finally(() => {
         delete this.completionAbortControllers[options.id]
       })
@@ -98,6 +106,14 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
         onNewToken(_token, _piece, _currentText, { abortSignal }) {
           if (abort) abortSignal()
         },
+        sampling: {
+          temp: options.params.temperature,
+          n_probs: options.params.n_probs,
+          logit_bias: options.params.logit_bias?.map(arr => ({token: arr[0], bias: arr[1] || -Infinity })),
+          min_p: options.params.min_p,
+          top_p: options.params.top_p,
+          top_k: options.params.top_k,
+        }
       }).finally(() => {
         delete this.completionAbortControllers[options.id]
       })

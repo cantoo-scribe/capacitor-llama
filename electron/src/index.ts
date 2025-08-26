@@ -1,4 +1,4 @@
-import type { Token, TokenBias } from 'node-llama-cpp'
+import type { Token, TokenBias, SequenceEvaluateOptions } from 'node-llama-cpp'
 
 import type {
   CapacitorLlamaPlugin,
@@ -20,11 +20,21 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     const nlc: typeof import("node-llama-cpp") = await Function('return import("node-llama-cpp")')();
     const { LlamaChatSession, TokenBias } = nlc;
     const context = this.contexts[id]
-    const session = new LlamaChatSession({
-      contextSequence: context.getSequence(),
-    })
-    let prompt = params.prompt
+
+    const abortController = new AbortController()
+    this.completionAbortControllers[id] = abortController
+    let customBias: TokenBias | undefined
+    if(params.logit_bias?.length) {
+      customBias = new TokenBias(context.model.tokenizer)
+      params.logit_bias.forEach(([tk, prob]) => {
+        customBias.set(tk as Token, prob === false ? 'never' : prob)
+      })
+    }
+    const sequence = context.getSequence()
     if (params.messages?.length) {
+      const session = new LlamaChatSession({
+        contextSequence: sequence,
+      })
       const lastMessage = params.messages.pop()
       const history = params.messages.map(message => {
         const messageContent = message.content || ''
@@ -46,30 +56,69 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
         }
       }).filter(m => !!m)
       await session.setChatHistory(history)
-      prompt = lastMessage.content
-    }
-    if (!prompt) throw new Error('prompt missing')
-    const abortController = new AbortController()
-    this.completionAbortControllers[id] = abortController
-    let customBias: TokenBias | undefined
-    if(params.logit_bias?.length) {
-      customBias = new TokenBias(context.model.tokenizer)
-      params.logit_bias.forEach(([tk, prob]) => {
-        customBias.set(tk as Token, prob === false ? 'never' : prob)
-      })
+      const prompt = lastMessage.content
+      if (!prompt) throw new Error('prompt missing')
+      const result = await session
+        .prompt(prompt, {
+          maxTokens: params.n_predict,
+          signal: abortController.signal,
+          tokenBias: customBias,
+          temperature: params.temperature,
+          minP: params.min_p,
+          topK: params.top_k,
+          topP: params.top_p
+        })
+        .finally(() => {
+          delete this.completionAbortControllers[id]
+        })
+      
+      !sequence.disposed && sequence.dispose()
+      !session.disposed && session.dispose()
+      return {
+        content: result,
+        text: result,
+        reasoning_content: '',
+      }
     }
 
-    const result = await session.prompt(prompt, { maxTokens: options.params.n_predict, signal: abortController.signal, tokenBias: customBias }).finally(() => {
-      delete this.completionAbortControllers[id]
-    })
-    
-    session.sequence.dispose()
-    session.dispose()
-  
+    const completion_probabilities: NativeCompletionResult['completion_probabilities'] = [];
+
+    const metadataOptions = {
+      probabilities: true
+    } as const;
+    const evalOptions: SequenceEvaluateOptions = {
+      temperature: params.temperature,
+      minP: params.min_p,
+      topK: params.top_k,
+      topP: params.top_p,
+      tokenBias: customBias,
+    };
+    const tokens = context.model.tokenize(params.prompt)
+    const iterator = sequence.evaluateWithMetadata(
+      tokens,
+      metadataOptions,
+      evalOptions
+    );
+
+    for await (const item of iterator) {
+      completion_probabilities.push({
+        content: context.model.detokenize([item.token]),
+        probs: params.n_probs ? 
+          [...item.probabilities.entries()].slice(0, params.n_probs).map(([tk, prob]) => ({ tok_str: context.model.detokenize([tk]), prob })) : []
+        
+      })
+
+      if (abortController.signal.aborted || (params.n_predict && completion_probabilities.length >= params.n_predict))
+        break;
+    }
+
+    const resText = completion_probabilities.map(({ content }) => content).join();
+    !sequence.disposed && sequence.dispose()
     return {
-      content: result,
-      text: result,
+      content: resText,
+      text: resText,
       reasoning_content: '',
+      completion_probabilities
     }
   }
 
