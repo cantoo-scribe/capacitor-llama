@@ -96,9 +96,9 @@ static inline jobject createWriteableMap(JNIEnv *env) {
 static inline void putString(JNIEnv *env, jobject map, const char *key, const char *value) {
     jclass mapClass = env->FindClass("com/getcapacitor/JSObject");
     jmethodID putStringMethod = env->GetMethodID(mapClass, "put", "(Ljava/lang/String;Ljava/lang/String;)Lcom/getcapacitor/JSObject;");
-
     jstring jKey = env->NewStringUTF(key);
-    jstring jValue = env->NewStringUTF(value);
+    std::string clean = sanitize_utf8(value);
+    jstring jValue = env->NewStringUTF(clean.c_str());
 
     // env->CallVoidMethod(map, putStringMethod, jKey, jValue);
     env->CallObjectMethod(map, putStringMethod, jKey, jValue);

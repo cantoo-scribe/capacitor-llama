@@ -392,6 +392,12 @@
     ).c_str()];;
 }
 
+- (NSString *)sanitizeUtf8:(std::string)input {
+    NSData *data = [NSData dataWithBytes:input.data() length:input.size()];
+    NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return result ?: @"�";
+}
+
 - (NSArray *)tokenProbsToDict:(std::vector<rnllama::completion_token_output>)probs {
     NSMutableArray *out = [[NSMutableArray alloc] init];
     for (const auto &prob : probs)
@@ -399,15 +405,15 @@
         NSMutableArray *probsForToken = [[NSMutableArray alloc] init];
         for (const auto &p : prob.probs)
         {
-            std::string tokStr = rnllama::tokens_to_output_formatted_string(llama->ctx, p.tok);
+            std::string text = rnllama::tokens_to_output_formatted_string(llama->ctx, p.tok);
             [probsForToken addObject:@{
-                @"tok_str": [NSString stringWithUTF8String:tokStr.c_str()],
+                @"tok_str": [self sanitizeUtf8:text],
                 @"prob": [NSNumber numberWithDouble:p.prob]
             }];
         }
         std::string tokStr = rnllama::tokens_to_output_formatted_string(llama->ctx, prob.tok);
         [out addObject:@{
-            @"content": [NSString stringWithUTF8String:tokStr.c_str()],
+            @"content": [self sanitizeUtf8:tokStr],
             @"probs": probsForToken
         }];
     }
@@ -612,7 +618,7 @@
             std::vector<rnllama::completion_token_output> probs_output = {};
 
             NSMutableDictionary *tokenResult = [[NSMutableDictionary alloc] init];
-            tokenResult[@"token"] = [NSString stringWithUTF8String:to_send.c_str()];
+            tokenResult[@"token"] = [self sanitizeUtf8:to_send];
 
             if (llama->params.sampling.n_probs > 0) {
                 const std::vector<llama_token> to_send_toks = common_tokenize(llama->ctx, to_send, false);
