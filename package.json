@@ -49,6 +49,9 @@
     "build-electron": "tsc --project electron/tsconfig.json && rollup -c electron/rollup.config.mjs && rimraf ./electron/build",
     "buildLib": "./scripts/build-android.sh"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@capacitor-community/electron": "^5.0.1",
     "@capacitor/android": "^6.0.0",
@@ -64,6 +67,7 @@
     "eslint": "^8.57.0",
     "prettier": "^3.4.2",
     "prettier-plugin-java": "^2.6.6",
+    "release-it": "^19.0.4",
     "rimraf": "^6.0.1",
     "rollup": "^4.30.1",
     "rollup-plugin-node-builtins": "^2.1.2",

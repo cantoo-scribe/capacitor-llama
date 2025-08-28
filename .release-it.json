@@ -1,0 +1,16 @@
+{
+  "git": {
+    "commitMessage": "chore: release ${version}",
+    "tagName": "v${version}"
+  },
+  "hooks": {
+    "before:init": ["npm run lint"],
+    "after:bump": ["npm run prepublishOnly"]
+  },
+  "npm": {
+    "publish": true
+  },
+  "github": {
+    "release": true
+  }
+}
