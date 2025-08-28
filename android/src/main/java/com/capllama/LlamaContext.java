@@ -2,7 +2,6 @@ package com.capllama;
 
 import android.content.res.AssetManager;
 import android.os.Build;
-
 import android.util.Log;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -351,28 +350,28 @@ public class LlamaContext {
     }
 
     public void stopCompletion() {
-      stopCompletion(this.context);
+        stopCompletion(this.context);
     }
 
     // public boolean isPredicting() {
     //   return isPredicting(this.context);
     // }
 
-     public JSObject tokenize(String text) {
-       JSObject result = new JSObject();
-       result.put("tokens", tokenize(this.context, text));
-       return result;
-     }
+    public JSObject tokenize(String text) {
+        JSObject result = new JSObject();
+        result.put("tokens", tokenize(this.context, text));
+        return result;
+    }
 
     public String detokenize(JSObject params) {
-        try{
+        try {
             JSONArray tokens = params.getJSONArray("tokens");
             int[] toks = new int[tokens.length()];
             for (int i = 0; i < tokens.length(); i++) {
                 toks[i] = (int) tokens.getDouble(i);
             }
             return detokenize(this.context, toks);
-        }catch (JSONException e) {
+        } catch (JSONException e) {
             throw new RuntimeException(e);
         }
     }
@@ -420,7 +419,7 @@ public class LlamaContext {
     // }
 
     public void release() {
-      freeContext(context);
+        freeContext(context);
     }
 
     static {
@@ -602,11 +601,16 @@ public class LlamaContext {
         String[] dry_sequence_breakers,
         PartialCompletionCallback partial_completion_callback
     );
+
     protected static native void stopCompletion(long contextPtr);
+
     // protected static native boolean isPredicting(long contextPtr);
     protected static native JSArray tokenize(long contextPtr, String text);
+
     protected static native String detokenize(long contextPtr, int[] tokens);
+
     protected static native JSArray getVocab(long contextPtr);
+
     // protected static native boolean isEmbeddingEnabled(long contextPtr);
     // protected static native WritableMap embedding(
     //   long contextPtr,

@@ -16,21 +16,21 @@ import type {
 //   'multi-thread/wllama.wasm' : './esm/multi-thread/wllama.wasm',
 // };
 export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin {
-  wllamas: Record<number, Wllama> = {}
-  completionAbortControllers: Record<number, () => void> = {}
+  wllamas: Record<number, Wllama> = {};
+  completionAbortControllers: Record<number, () => void> = {};
   async initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext> {
-    const wllamaInstance = new Wllama(WasmFromCDN)
-    await wllamaInstance.loadModelFromUrl(options.model, { 
+    const wllamaInstance = new Wllama(WasmFromCDN);
+    await wllamaInstance.loadModelFromUrl(options.model, {
       n_ctx: options.n_ctx,
       n_batch: options.n_batch,
       cache_type_k: options.cache_type_k !== 'iq4_nl' ? options.cache_type_k : undefined,
-      cache_type_v: options.cache_type_v !== 'iq4_nl' ? options.cache_type_v: undefined,
+      cache_type_v: options.cache_type_v !== 'iq4_nl' ? options.cache_type_v : undefined,
       embeddings: options.embedding,
       n_threads: options.n_threads,
       useCache: options.readFromCache,
-    })
+    });
 
-    this.wllamas[options.id] = wllamaInstance
+    this.wllamas[options.id] = wllamaInstance;
     return {
       gpu: false,
       reasonNoGPU: '',
@@ -39,134 +39,153 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
         isChatTemplateSupported: true,
         chatTemplates: {
           llamaChat: true,
-          minja: { 
+          minja: {
             default: false,
-            toolUseCaps: { parallelToolCalls:false, systemRole: false, toolCallId: false, toolCalls: false, toolResponses: false, tools: false },
+            toolUseCaps: {
+              parallelToolCalls: false,
+              systemRole: false,
+              toolCallId: false,
+              toolCalls: false,
+              toolResponses: false,
+              tools: false,
+            },
             toolUse: false,
-            defaultCaps: { parallelToolCalls:false, systemRole: false, toolCallId: false, toolCalls: false, toolResponses: false, tools: false }
+            defaultCaps: {
+              parallelToolCalls: false,
+              systemRole: false,
+              toolCallId: false,
+              toolCalls: false,
+              toolResponses: false,
+              tools: false,
+            },
           },
         },
         metadata: wllamaInstance.getModelMetadata().meta, // model.fileInfo.metadata,
         nEmbd: wllamaInstance.getLoadedContextInfo().n_embd,
         // TODO: how to get the number of parameters?
         nParams: 0,
-        size: (await wllamaInstance.modelManager.getModels()).find(model => model.url === options.model)?.size || 0,
-        nVocab: wllamaInstance.getLoadedContextInfo().n_vocab
-      }
-    }
+        size: (await wllamaInstance.modelManager.getModels()).find((model) => model.url === options.model)?.size || 0,
+        nVocab: wllamaInstance.getLoadedContextInfo().n_vocab,
+      },
+    };
   }
 
-  async completion(options: { id: number; params: CompletionParams; }): Promise<NativeCompletionResult> {
-    const wllama = this.wllamas[options.id]
-    let result = ''
-    let abort = false
+  async completion(options: { id: number; params: CompletionParams }): Promise<NativeCompletionResult> {
+    const wllama = this.wllamas[options.id];
+    let result = '';
+    let abort = false;
     this.completionAbortControllers[options.id] = () => {
-      abort = true
-    }
+      abort = true;
+    };
     if (options.params.messages?.length) {
-      const history = options.params.messages.map(message => {
-        const messageContent = message.content || ''
-        if (message.role ===  'prompt' || message.role ===  'system') {
-          return {
-            role: 'system' as const,
-            content: messageContent,
+      const history = options.params.messages
+        .map((message) => {
+          const messageContent = message.content || '';
+          if (message.role === 'prompt' || message.role === 'system') {
+            return {
+              role: 'system' as const,
+              content: messageContent,
+            };
+          } else if (message.role === 'model') {
+            return {
+              role: 'assistant' as const,
+              content: messageContent,
+            };
           }
-        } else if (message.role === 'model') {
           return {
-            role: 'assistant' as const,
+            role: 'user' as const,
             content: messageContent,
-          }
-        }
-        return {
-          role: 'user' as const,
-          content: messageContent,
-        }
-      }).filter(m => !!m)
+          };
+        })
+        .filter((m) => !!m);
       // 'system' | 'user' | 'assistant'
-      result = await wllama.createChatCompletion(history, {
-        nPredict: options.params.n_predict,
-        onNewToken(_token, _piece, _currentText, { abortSignal }) {
-          if (abort) abortSignal()
-        },
-      sampling: {
-        temp: options.params.temperature,
-        n_probs: options.params.n_probs,
-        logit_bias: options.params.logit_bias?.map(arr => ({token: arr[0], bias: arr[1] || -Infinity })),
-        min_p: options.params.min_p,
-        top_p: options.params.top_p,
-        top_k: options.params.top_k,
-      }
-      }).finally(() => {
-        delete this.completionAbortControllers[options.id]
-      })
-      
+      result = await wllama
+        .createChatCompletion(history, {
+          nPredict: options.params.n_predict,
+          onNewToken(_token, _piece, _currentText, { abortSignal }) {
+            if (abort) abortSignal();
+          },
+          sampling: {
+            temp: options.params.temperature,
+            n_probs: options.params.n_probs,
+            logit_bias: options.params.logit_bias?.map((arr) => ({ token: arr[0], bias: arr[1] || -Infinity })),
+            min_p: options.params.min_p,
+            top_p: options.params.top_p,
+            top_k: options.params.top_k,
+          },
+        })
+        .finally(() => {
+          delete this.completionAbortControllers[options.id];
+        });
     } else if (options.params.prompt) {
-      result = await wllama.createCompletion(options.params.prompt, {
-        nPredict: options.params.n_predict,
-        onNewToken(_token, _piece, _currentText, { abortSignal }) {
-          if (abort) abortSignal()
-        },
-        sampling: {
-          temp: options.params.temperature,
-          n_probs: options.params.n_probs,
-          logit_bias: options.params.logit_bias?.map(arr => ({token: arr[0], bias: arr[1] || -Infinity })),
-          min_p: options.params.min_p,
-          top_p: options.params.top_p,
-          top_k: options.params.top_k,
-        }
-      }).finally(() => {
-        delete this.completionAbortControllers[options.id]
-      })
+      result = await wllama
+        .createCompletion(options.params.prompt, {
+          nPredict: options.params.n_predict,
+          onNewToken(_token, _piece, _currentText, { abortSignal }) {
+            if (abort) abortSignal();
+          },
+          sampling: {
+            temp: options.params.temperature,
+            n_probs: options.params.n_probs,
+            logit_bias: options.params.logit_bias?.map((arr) => ({ token: arr[0], bias: arr[1] || -Infinity })),
+            min_p: options.params.min_p,
+            top_p: options.params.top_p,
+            top_k: options.params.top_k,
+          },
+        })
+        .finally(() => {
+          delete this.completionAbortControllers[options.id];
+        });
     }
     return {
       text: result,
       content: result,
-      reasoning_content: ''
-    }
+      reasoning_content: '',
+    };
   }
 
-  async stopCompletion(options: { id: number; }): Promise<void> {
-    const abortController = this.completionAbortControllers[options.id]
-    if (abortController) abortController()
+  async stopCompletion(options: { id: number }): Promise<void> {
+    const abortController = this.completionAbortControllers[options.id];
+    if (abortController) abortController();
   }
 
-  async releaseContext(options: { id: number; }): Promise<void> {
-    const wllama = this.wllamas[options.id]
+  async releaseContext(options: { id: number }): Promise<void> {
+    const wllama = this.wllamas[options.id];
     if (!wllama) {
-      console.error('context not found:', options.id)
-      return
+      console.error('context not found:', options.id);
+      return;
     }
-    wllama.exit()
-    delete this.wllamas[options.id]
-    delete this.completionAbortControllers[options.id]
+    wllama.exit();
+    delete this.wllamas[options.id];
+    delete this.completionAbortControllers[options.id];
   }
 
   async releaseAllContexts(): Promise<void> {
-    await Promise.allSettled(Object.keys(this.wllamas).map(key => this.releaseContext({ id: Number(key) })))
+    await Promise.allSettled(Object.keys(this.wllamas).map((key) => this.releaseContext({ id: Number(key) })));
   }
 
-  async tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[]; }> {
-    const wllama = this.wllamas[options.id]
-    const tokens = await wllama.tokenize(options.text, options.specialTokens)
+  async tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[] }> {
+    const wllama = this.wllamas[options.id];
+    const tokens = await wllama.tokenize(options.text, options.specialTokens);
     return {
-      tokens
-    }
+      tokens,
+    };
   }
 
-  async detokenize(options: { id: number; tokens: number[]; }): Promise<{ text: string }> {
-    const wllama = this.wllamas[options.id]
-    const uint8array = await wllama.detokenize(options.tokens)
-    return { text: new TextDecoder().decode(uint8array) }
+  async detokenize(options: { id: number; tokens: number[] }): Promise<{ text: string }> {
+    const wllama = this.wllamas[options.id];
+    const uint8array = await wllama.detokenize(options.tokens);
+    return { text: new TextDecoder().decode(uint8array) };
   }
 
-  async getVocab(options: { id: number; }): Promise<{ vocab: string[]; }> {
-    const wllama = this.wllamas[options.id]
-    const vocab = await wllama.getVocab().then(tokens => 
-      tokens.map(token => {
+  async getVocab(options: { id: number }): Promise<{ vocab: string[] }> {
+    const wllama = this.wllamas[options.id];
+    const vocab = await wllama.getVocab().then((tokens) =>
+      tokens.map((token) => {
         const decoder = new TextDecoder('utf-8'); // Specify the encoding (default is UTF-8)
         return decoder.decode(token);
-      })
-    )
-    return { vocab }
+      }),
+    );
+    return { vocab };
   }
 }

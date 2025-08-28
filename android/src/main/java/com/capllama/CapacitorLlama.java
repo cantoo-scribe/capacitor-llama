@@ -3,9 +3,6 @@ package com.capllama;
 // import androidx.annotation.NonNull;
 import android.util.Log;
 import com.getcapacitor.JSObject;
-
-import org.json.JSONArray;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.PushbackInputStream;
@@ -16,13 +13,13 @@ import java.io.PushbackInputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+import org.json.JSONArray;
 
 public class CapacitorLlama {
 
     public static final String NAME = "CapacitorLlama";
 
-    public CapacitorLlama() {
-    }
+    public CapacitorLlama() {}
 
     // private HashMap<AsyncTask, String> tasks = new HashMap<>();
 
@@ -243,20 +240,19 @@ public class CapacitorLlama {
         // tasks.remove(this);
         // tasks.put(task, "completion-" + contextId);
     }
-     public void stopCompletion(double id) {
-       final int contextId = (int) id;
-         try {
-             LlamaContext context = contexts.get(contextId);
-             if (context == null) {
-                 throw new Exception("Context not found");
-             }
-             context.stopCompletion();
-         } catch (Exception e) {
 
-         }
-     }
+    public void stopCompletion(double id) {
+        final int contextId = (int) id;
+        try {
+            LlamaContext context = contexts.get(contextId);
+            if (context == null) {
+                throw new Exception("Context not found");
+            }
+            context.stopCompletion();
+        } catch (Exception e) {}
+    }
 
-     public JSObject tokenize(final JSObject params) {
+    public JSObject tokenize(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
         try {
             LlamaContext context = contexts.get(contextId);
@@ -269,7 +265,7 @@ public class CapacitorLlama {
             Log.e(NAME, "Failed tokenize", e);
             return null;
         }
-     }
+    }
 
     public JSObject detokenize(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
@@ -469,52 +465,51 @@ public class CapacitorLlama {
         try {
             LlamaContext context = contexts.get(contextId);
             if (context == null) {
-              throw new Exception("Context " + id + " not found");
+                throw new Exception("Context " + id + " not found");
             }
             context.interruptLoad();
             context.stopCompletion();
             context.release();
             contexts.remove(contextId);
-        } catch (Exception e) {
-        }
-    //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
-    //     private Exception exception;
+        } catch (Exception e) {}
+        //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
+        //     private Exception exception;
 
-    //     @Override
-    //     protected Void doInBackground(Void... voids) {
-    //       try {
-    //         LlamaContext context = contexts.get(contextId);
-    //         if (context == null) {
-    //           throw new Exception("Context " + id + " not found");
-    //         }
-    //         context.interruptLoad();
-    //         context.stopCompletion();
-    //         AsyncTask completionTask = null;
-    //         for (AsyncTask task : tasks.keySet()) {
-    //           if (tasks.get(task).equals("completion-" + contextId)) {
-    //             task.get();
-    //             break;
-    //           }
-    //         }
-    //         context.release();
-    //         contexts.remove(contextId);
-    //       } catch (Exception e) {
-    //         exception = e;
-    //       }
-    //       return null;
-    //     }
+        //     @Override
+        //     protected Void doInBackground(Void... voids) {
+        //       try {
+        //         LlamaContext context = contexts.get(contextId);
+        //         if (context == null) {
+        //           throw new Exception("Context " + id + " not found");
+        //         }
+        //         context.interruptLoad();
+        //         context.stopCompletion();
+        //         AsyncTask completionTask = null;
+        //         for (AsyncTask task : tasks.keySet()) {
+        //           if (tasks.get(task).equals("completion-" + contextId)) {
+        //             task.get();
+        //             break;
+        //           }
+        //         }
+        //         context.release();
+        //         contexts.remove(contextId);
+        //       } catch (Exception e) {
+        //         exception = e;
+        //       }
+        //       return null;
+        //     }
 
-    //     @Override
-    //     protected void onPostExecute(Void result) {
-    //       if (exception != null) {
-    //         promise.reject(exception);
-    //         return;
-    //       }
-    //       promise.resolve(null);
-    //       tasks.remove(this);
-    //     }
-    //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    //   tasks.put(task, "releaseContext-" + contextId);
+        //     @Override
+        //     protected void onPostExecute(Void result) {
+        //       if (exception != null) {
+        //         promise.reject(exception);
+        //         return;
+        //       }
+        //       promise.resolve(null);
+        //       tasks.remove(this);
+        //     }
+        //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        //   tasks.put(task, "releaseContext-" + contextId);
     }
 
     public void releaseAllContexts() {
@@ -524,7 +519,6 @@ public class CapacitorLlama {
         }
         contexts.clear();
     }
-
     // @Override
     // public void onHostResume() {
     // }

@@ -35,7 +35,7 @@ public class CapacitorLlamaPlugin extends Plugin {
         implementation.releaseAllContexts();
         call.resolve();
     }
-    
+
     @PluginMethod
     public void releaseContext(PluginCall call) {
         Integer id = call.getInt("id", -1);

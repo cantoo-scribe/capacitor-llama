@@ -51,7 +51,7 @@ export type CompletionResponseFormat = {
 
 export type LlamaOAICompatibleMessage = {
   // TODO: which values are valid?
-  role: string;// 'user' | 'prompt' | 'model';
+  role: string; // 'user' | 'prompt' | 'model';
   content?: string;
 };
 
@@ -219,14 +219,14 @@ export type CompletionParams = Omit<NativeCompletionParams, 'emit_partial_comple
   CompletionBaseParams;
 
 export type NativeCompletionTokenProbItem = {
-  tok_str: string
-  prob: number
-}
+  tok_str: string;
+  prob: number;
+};
 
 export type NativeCompletionTokenProb = {
-  content: string
-  probs: NativeCompletionTokenProbItem[]
-}
+  content: string;
+  probs: NativeCompletionTokenProbItem[];
+};
 
 export type NativeCompletionResult = {
   /**
@@ -242,7 +242,7 @@ export type NativeCompletionResult = {
    */
   content: string;
 
-  completion_probabilities?: NativeCompletionTokenProb[]
+  completion_probabilities?: NativeCompletionTokenProb[];
 };
 
 export type FormattedLlama = {
@@ -250,29 +250,27 @@ export type FormattedLlama = {
 };
 
 export interface CapacitorLlamaPlugin {
-  initContext(
-    options: ContextParams & { id: number },
-  ): Promise<NativeLlamaContext>;
+  initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext>;
 
   completion(options: { id: number; params: CompletionParams }): Promise<NativeCompletionResult>;
 
   stopCompletion(options: { id: number }): Promise<void>;
-  
-  releaseContext(options: { id: number }): Promise<void>
 
-  releaseAllContexts(): Promise<void>
+  releaseContext(options: { id: number }): Promise<void>;
 
-  tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[] }>
+  releaseAllContexts(): Promise<void>;
 
-  detokenize(options: { id: number; tokens: number[] }): Promise<{ text: string }>
+  tokenize(options: { id: number; text: string; specialTokens?: boolean }): Promise<{ tokens: number[] }>;
 
-  getVocab(options: { id: number }): Promise<{ vocab: string[] }>
+  detokenize(options: { id: number; tokens: number[] }): Promise<{ text: string }>;
+
+  getVocab(options: { id: number }): Promise<{ vocab: string[] }>;
 }
 
 export type NativeContextParams = {
   /**
    * For **android**, **iOS** and **electron** the `model` is an absolute path. Example: `/path/to/my-model.gguf`
-   * 
+   *
    * For **web** the `model` is an url. Example: https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_S.gguf
    */
   model: string;
@@ -280,10 +278,10 @@ export type NativeContextParams = {
    * **Note: This option is available only on web.**
    *
    * Controls whether to load the model from the browser cache.
-   * 
-   * - If `true` (default), the model manager first tries to load the model from cache. 
+   *
+   * - If `true` (default), the model manager first tries to load the model from cache.
    *   If it's not cached, it will download the model and cache it for future use.
-   * 
+   *
    * - If `false`, the model will always be downloaded, ignoring any cached versions.
    */
   readFromCache?: boolean;
