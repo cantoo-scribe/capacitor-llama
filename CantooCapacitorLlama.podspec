@@ -14,7 +14,7 @@ end
 base_optimizer_flags = "-O3 -DNDEBUG"
 
 Pod::Spec.new do |s|
-  s.name = 'CapacitorLlama'
+  s.name = 'CantooCapacitorLlama'
   s.version = package['version']
   s.summary = package['description']
   s.license = package['license']

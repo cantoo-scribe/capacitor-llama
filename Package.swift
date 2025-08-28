@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CapacitorLlama",
+    name: "CantooCapacitorLlama",
     platforms: [.iOS(.v14)],
     products: [
         .library(
