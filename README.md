@@ -186,17 +186,17 @@ From T, pick a set of properties whose keys are in the union K
 
 #### NativeCompletionResult
 
-<code>{ /** * Original text (Ignored reasoning_content / tool_calls) */ text: string; /** * Reasoning content (parsed for reasoning model) */ reasoning_content: string; /** * Content text (Filtered text by reasoning_content / tool_calls) */ content: string; completion_probabilities?: NativeCompletionTokenProb[] }</code>
+<code>{ /** * Original text (Ignored reasoning_content / tool_calls) */ text: string; /** * Reasoning content (parsed for reasoning model) */ reasoning_content: string; /** * Content text (Filtered text by reasoning_content / tool_calls) */ content: string; completion_probabilities?: NativeCompletionTokenProb[]; }</code>
 
 
 #### NativeCompletionTokenProb
 
-<code>{ content: string probs: NativeCompletionTokenProbItem[] }</code>
+<code>{ content: string; probs: NativeCompletionTokenProbItem[]; }</code>
 
 
 #### NativeCompletionTokenProbItem
 
-<code>{ tok_str: string prob: number }</code>
+<code>{ tok_str: string; prob: number; }</code>
 
 
 #### CompletionParams
@@ -216,7 +216,7 @@ From T, pick a set of properties whose keys are in the union K
 
 #### LlamaOAICompatibleMessage
 
-<code>{ // TODO: which values are valid? role: string;// 'user' | 'prompt' | 'model'; content?: string; }</code>
+<code>{ // TODO: which values are valid? role: string; // 'user' | 'prompt' | 'model'; content?: string; }</code>
 
 
 #### CompletionResponseFormat
