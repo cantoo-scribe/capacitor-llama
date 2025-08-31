@@ -15,7 +15,10 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/*
 
+# Android files
+android/src/main/jniLibs
 
 # macOS files
 .DS_Store
