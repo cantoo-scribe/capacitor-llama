@@ -442,29 +442,36 @@ public class LlamaContext {
 
         // TODO: Add runtime check for cpu features
         if (LlamaContext.isArm64V8a()) {
-            if (hasDotProd && hasI8mm) {
-                Log.d(NAME, "Loading libcapllama_v8_2_dotprod_i8mm.so");
-                System.loadLibrary("capllama_v8_2_dotprod_i8mm");
-                loadedLibrary = "capllama_v8_2_dotprod_i8mm";
-            } else if (hasDotProd) {
-                Log.d(NAME, "Loading libcapllama_v8_2_dotprod.so");
-                System.loadLibrary("capllama_v8_2_dotprod");
-                loadedLibrary = "capllama_v8_2_dotprod";
-            } else if (hasI8mm) {
-                Log.d(NAME, "Loading libcapllama_v8_2_i8mm.so");
-                System.loadLibrary("capllama_v8_2_i8mm");
-                loadedLibrary = "capllama_v8_2_i8mm";
-            } else if (hasFp16) {
-                Log.d(NAME, "Loading libcapllama_v8_2.so");
-                System.loadLibrary("capllama_v8_2");
-                loadedLibrary = "capllama_v8_2";
+            // if (hasDotProd && hasI8mm) {
+            //     Log.d(NAME, "Loading libcapllama_v8_2_dotprod_i8mm.so");
+            //     System.loadLibrary("capllama_v8_2_dotprod_i8mm");
+            //     loadedLibrary = "capllama_v8_2_dotprod_i8mm";
+            // } else if (hasDotProd) {
+            //     Log.d(NAME, "Loading libcapllama_v8_2_dotprod.so");
+            //     System.loadLibrary("capllama_v8_2_dotprod");
+            //     loadedLibrary = "capllama_v8_2_dotprod";
+            // } else if (hasI8mm) {
+            //     Log.d(NAME, "Loading libcapllama_v8_2_i8mm.so");
+            //     System.loadLibrary("capllama_v8_2_i8mm");
+            //     loadedLibrary = "capllama_v8_2_i8mm";
+            // } else if (hasFp16) {
+            //     Log.d(NAME, "Loading libcapllama_v8_2.so");
+            //     System.loadLibrary("capllama_v8_2");
+            //     loadedLibrary = "capllama_v8_2";
+            // } else {
+            //     Log.d(NAME, "Loading default libcapllama_v8.so");
+            //     System.loadLibrary("capllama_v8");
+            //     loadedLibrary = "capllama_v8";
+            // }
+            if (hasFp16 && isAtLeastArmV84) {
+                Log.d(NAME, "Loading libcapllama_v8_7.so with runtime feature detection");
+                System.loadLibrary("capllama_v8_7");
+                loadedLibrary = "capllama_v8_7";
             } else {
                 Log.d(NAME, "Loading default libcapllama_v8.so");
                 System.loadLibrary("capllama_v8");
                 loadedLibrary = "capllama_v8";
             }
-            //  Log.d(NAME, "Loading libcapllama_v8_7.so with runtime feature detection");
-            //  System.loadLibrary("capllama_v8_7");
         } else if (LlamaContext.isX86_64()) {
             Log.d(NAME, "Loading libcapllama_x86_64.so");
             System.loadLibrary("capllama_x86_64");

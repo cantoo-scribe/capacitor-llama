@@ -4,6 +4,7 @@
 NDK_VERSION=26.1.10909125
 CMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake
 ANDROID_PLATFORM=android-21
+# Release or Debug
 CMAKE_BUILD_TYPE=Release
 
 if [ ! -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then

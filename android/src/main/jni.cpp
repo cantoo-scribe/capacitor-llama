@@ -404,11 +404,11 @@ Java_com_capllama_LlamaContext_initContext(
     env->ReleaseStringUTFChars(cache_type_k, cache_type_k_chars);
     env->ReleaseStringUTFChars(cache_type_v, cache_type_v_chars);
 
-    LOGI("[RNLlama] is_model_loaded %s", (is_model_loaded ? "true" : "false"));
-    LOGI("[RNLlama] lib updated 2");
+    LOGI("[CapLlama] is_model_loaded %s", (is_model_loaded ? "true" : "false"));
+    LOGI("[CapLlama] lib updated 2");
     if (is_model_loaded) {
         if (embedding && llama_model_has_encoder(llama->model) && llama_model_has_decoder(llama->model)) {
-            LOGI("[RNLlama] computing embeddings in encoder-decoder models is not supported");
+            LOGI("[CapLlama] computing embeddings in encoder-decoder models is not supported");
             llama_free(llama->ctx);
             return -1;
         }
@@ -445,11 +445,11 @@ Java_com_capllama_LlamaContext_initContext(
     env->ReleaseStringUTFChars(lora_str, lora_chars);
     int result = llama->applyLoraAdapters(lora);
     if (result != 0) {
-      LOGI("[RNLlama] Failed to apply lora adapters");
+      LOGI("[CapLlama] Failed to apply lora adapters");
       llama_free(llama->ctx);
       return -1;
     }
-
+    LOGI("[CapLlama] arm features: neon %d dotprod %d i8mm %d sve %d sme %d\n", lm_ggml_cpu_has_neon(), lm_ggml_cpu_has_dotprod(), lm_ggml_cpu_has_matmul_int8(), lm_ggml_cpu_has_sve(), lm_ggml_cpu_has_sme());
     return reinterpret_cast<jlong>(llama->ctx);
 }
 
@@ -598,7 +598,7 @@ Java_com_capllama_LlamaContext_getFormattedChatWithJinja(
         }
         putArray(env, result, "additional_stops", additional_stops);
     } catch (const std::runtime_error &e) {
-        LOGI("[RNLlama] Error: %s", e.what());
+        LOGI("[CapLlama] Error: %s", e.what());
         putString(env, result, "_error", e.what());
     }
     env->ReleaseStringUTFChars(tools, tools_chars);
@@ -806,7 +806,7 @@ Java_com_capllama_LlamaContext_doCompletion(
             if (ids.size() == 1) {
                 sparams.preserved_tokens.insert(ids[0]);
             } else {
-                LOGI("[RNLlama] Not preserved because more than 1 token (wrong chat template override?): %s", env->GetStringUTFChars(preserved_token, nullptr));
+                LOGI("[CapLlama] Not preserved because more than 1 token (wrong chat template override?): %s", env->GetStringUTFChars(preserved_token, nullptr));
             }
         }
     }
