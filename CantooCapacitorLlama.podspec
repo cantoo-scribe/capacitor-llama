@@ -23,7 +23,19 @@ Pod::Spec.new do |s|
   s.source = { :git => package['repository']['url'], :tag => s.version.to_s }
   s.source_files = 'ios/Sources/**/*.{swift,h,m,mm,hpp}'
   s.vendored_frameworks = "ios/Sources/CapacitorLlamaPlugin/capllama.xcframework"
-s.public_header_files = "ios/Sources/CapacitorLlamaPlugin/CapacitorLlamaPlugin-Bridging-Header.h",
+  s.prepare_command = <<-SCRIPT
+    FRAMEWORK_PATH="ios/Sources/CapacitorLlamaPlugin/capllama.xcframework"
+    RELEASE_URL="https://github.com/cantoo-scribe/capacitor-llama/releases/download/v0.0.1/capllama.xcframework.zip"
+
+    if [ ! -d "$FRAMEWORK_PATH" ]; then
+      echo "📦 Downloading capllama.xcframework..."
+      curl -L "$RELEASE_URL" -o /tmp/capllama.xcframework.zip
+      unzip -q /tmp/capllama.xcframework.zip -d "ios/Sources/CapacitorLlamaPlugin/"
+      rm -f /tmp/capllama.xcframework.zip
+      echo "✅ capllama.xcframework ready."
+    fi
+  SCRIPT
+  s.public_header_files = "ios/Sources/CapacitorLlamaPlugin/CapacitorLlamaPlugin-Bridging-Header.h",
   s.ios.deployment_target = '14.0'
   s.dependency 'Capacitor'
   s.swift_version = '5.1'

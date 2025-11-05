@@ -16,6 +16,7 @@ buildscript {
 }
 
 apply plugin: 'com.android.library'
+// apply plugin: 'maven-publish'
 // def getArchitectures() {
 //     def archs = ["x86_64", "arm64-v8a"]
 //     return archs.findAll { it != "armeabi-v7a" && it != "x86" } // Not building for 32-bit architectures
@@ -61,6 +62,27 @@ android {
     //    }
     //  }
 }
+// TODO: for now the aar file is published on GitHub Releases, but we can change it to Maven Central or other in the future
+// publishing {
+//     publications {
+//         release(MavenPublication) {
+//             groupId = "com.cantoo.scribe"
+//             artifactId = "capllama"
+//             version = "0.0.1"
+//             artifact("$buildDir/outputs/aar/android-release.aar")
+//         }
+//     }
+//     repositories {
+//         maven {
+//             name = "GitHubPackages"
+//             url = uri("https://maven.pkg.github.com/cantoo-scribe/capacitor-llama")
+//             credentials {
+//                 username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
+//                 password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
+//             }
+//         }
+//     }
+// }
 
 repositories {
     google()
