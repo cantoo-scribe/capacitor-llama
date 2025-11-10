@@ -1,5 +1,5 @@
 // @ts-check
-import { LlamaContext, Llama } from 'capacitor-llama';
+import { LlamaContext, Llama } from '@cantoo/capacitor-llama';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
 function showBtn(id) {

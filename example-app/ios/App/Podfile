@@ -11,7 +11,7 @@ def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorFilesystem', :path => '../../node_modules/@capacitor/filesystem'
-  pod 'CapacitorLlama', :path => '../../..'
+  pod 'CantooCapacitorLlama', :path => '../../..'
 end
 
  use_frameworks! :linkage => :static

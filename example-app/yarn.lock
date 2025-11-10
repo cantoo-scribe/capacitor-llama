@@ -2,6 +2,10 @@
 # yarn lockfile v1
 
 
+"@cantoo/capacitor-llama@link:..":
+  version "0.0.0"
+  uid ""
+
 "@capacitor-community/electron@^5.0.1":
   version "5.0.1"
   resolved "https://registry.yarnpkg.com/@capacitor-community/electron/-/electron-5.0.1.tgz#35d03333c4c5bbca0b62875b904bcee7e7cae12f"
@@ -18,10 +22,10 @@
     mime-types "~2.1.35"
     ora "^5.4.1"
 
-"@capacitor/android@6.0.0":
-  version "6.0.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-6.0.0.tgz#eb24c64a5c6821fbbb8db48eedf50eca18876318"
-  integrity sha512-NwL87VO9F1WY/EgvJZN9pIhjejq688k2fRW6XWNLVe3cgGE6nUb9J34KI68fhx3139cf2LVGPUYs+mwZC8esiQ==
+"@capacitor/android@7.0.0":
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-7.0.0.tgz#232439e19c037301fa0a49a20675325d4929469a"
+  integrity sha512-T7WMJPGlzEzNFI3s3lA8F2H6XyYzQM8OwgIfPKOAbawc6Fq669ABKIpfNPzsQHR1kVxH3cMHYSkDaPMgJyDdXQ==
 
 "@capacitor/cli@>=5.4.0":
   version "7.2.0"
@@ -76,22 +80,29 @@
   dependencies:
     tslib "^2.1.0"
 
-"@capacitor/core@^6.0.0":
-  version "6.2.1"
-  resolved "https://registry.yarnpkg.com/@capacitor/core/-/core-6.2.1.tgz#7f1cbf438e55d3c32940eac26abd307c19f8bdee"
-  integrity sha512-urZwxa7hVE/BnA18oCFAdizXPse6fCKanQyEqpmz6cBJ2vObwMpyJDG5jBeoSsgocS9+Ax+9vb4ducWJn0y2qQ==
+"@capacitor/core@latest":
+  version "7.4.4"
+  resolved "https://registry.yarnpkg.com/@capacitor/core/-/core-7.4.4.tgz#b752dd7a12141e40d1c8ce2e37a79571d9f83518"
+  integrity sha512-xzjxpr+d2zwTpCaN0k+C6wKSZzWFAb9OVEUtmO72ihjr/NEDoLvsGl4WLfjWPcCO2zOy0b2X52tfRWjECFUjtw==
   dependencies:
     tslib "^2.1.0"
 
-"@capacitor/filesystem@^6.0.0":
-  version "6.0.3"
-  resolved "https://registry.yarnpkg.com/@capacitor/filesystem/-/filesystem-6.0.3.tgz#80d8f637b2ffa5281ca6d81bbb8a8c60eef4c8a9"
-  integrity sha512-PdIP/yOGAbG1lq1wbFbSPhXQ9/5lpTpeiok2NneawJOk6UXvy9W7QZXRo7wXAP7J6FdzU7bKfOORRXpOJpgXyw==
+"@capacitor/filesystem@^7.0.0":
+  version "7.1.4"
+  resolved "https://registry.yarnpkg.com/@capacitor/filesystem/-/filesystem-7.1.4.tgz#b728831f15af00d7d5c0779c683da142cba3b366"
+  integrity sha512-BdUnOVulHAtruW2GeC9o7e9LO5aFcVYqNn3dLypJSOck/WipUFNfI0QWoUS0FVGeqBbDJgFGi3zjXJx0lzbDkA==
+  dependencies:
+    "@capacitor/synapse" "^1.0.3"
 
-"@capacitor/ios@6.0.0":
-  version "6.0.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-6.0.0.tgz#b04ce2967d732c73ebf29ec38b4b585255930e43"
-  integrity sha512-7mAs3gjWiE5DPM4AGPduqFSDGXCPwwqQRMzbohVway7/cTWnHomHV8mIojMZE4GILeWO2fILbyu3C8q9pHg2vg==
+"@capacitor/ios@7.0.0":
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-7.0.0.tgz#ecc8944fab99c4f8574d467b319586c6547b3346"
+  integrity sha512-FuCoTx2HRYPhIUOT+J87rHkjT4m1yNLsIaG5/qkt9JG5k3KIYATKbp8EHjtLAMqyJWJKBmjkjpFExNesr/t6kA==
+
+"@capacitor/synapse@^1.0.3":
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/@capacitor/synapse/-/synapse-1.0.4.tgz#c6beb33119d9656b1f04cb7783989fb78933ef6d"
+  integrity sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==
 
 "@esbuild/aix-ppc64@0.21.5":
   version "0.21.5"
@@ -1009,10 +1020,6 @@ call-bind-apply-helpers@^1.0.1, call-bind-apply-helpers@^1.0.2:
   dependencies:
     es-errors "^1.3.0"
     function-bind "^1.1.2"
-
-"capacitor-llama@link:../":
-  version "0.0.0"
-  uid ""
 
 chalk@^4.1.0, chalk@^4.1.2:
   version "4.1.2"
