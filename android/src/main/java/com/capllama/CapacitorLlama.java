@@ -114,7 +114,7 @@ public class CapacitorLlama {
         }
     }
 
-    public JSObject getFormattedChat(/* double id, final String messages, final String chatTemplate, */final JSObject params) {
+    public JSObject getFormattedChat(/* double id, final String messages, final String chatTemplate, */ final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
         try {
             LlamaContext context = contexts.get(contextId);

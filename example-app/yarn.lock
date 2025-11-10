@@ -22,10 +22,10 @@
     mime-types "~2.1.35"
     ora "^5.4.1"
 
-"@capacitor/android@7.0.0":
-  version "7.0.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-7.0.0.tgz#232439e19c037301fa0a49a20675325d4929469a"
-  integrity sha512-T7WMJPGlzEzNFI3s3lA8F2H6XyYzQM8OwgIfPKOAbawc6Fq669ABKIpfNPzsQHR1kVxH3cMHYSkDaPMgJyDdXQ==
+"@capacitor/android@^7.0.0":
+  version "7.4.4"
+  resolved "https://registry.yarnpkg.com/@capacitor/android/-/android-7.4.4.tgz#a14a1e844bd5079982427e247fdd17555b5fbedd"
+  integrity sha512-y8knfV1JXNrd6XZZLZireGT+EBCN0lvOo+HZ/s7L8LkrPBu4nY5UZn0Wxz4yOezItEII9rqYJSHsS5fMJG9gdw==
 
 "@capacitor/cli@>=5.4.0":
   version "7.2.0"
@@ -94,10 +94,10 @@
   dependencies:
     "@capacitor/synapse" "^1.0.3"
 
-"@capacitor/ios@7.0.0":
-  version "7.0.0"
-  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-7.0.0.tgz#ecc8944fab99c4f8574d467b319586c6547b3346"
-  integrity sha512-FuCoTx2HRYPhIUOT+J87rHkjT4m1yNLsIaG5/qkt9JG5k3KIYATKbp8EHjtLAMqyJWJKBmjkjpFExNesr/t6kA==
+"@capacitor/ios@^7.0.0":
+  version "7.4.4"
+  resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-7.4.4.tgz#051c37df4ffa878bd757b3849ce61668ac174083"
+  integrity sha512-Xp3bGWlSQAwsZGngRMWTdoD2agdMV12Whnm+/xsYPxfQSj+Tksbr7r/8Mso7VWkpnTKO4iMlx762g3PjW+wi4w==
 
 "@capacitor/synapse@^1.0.3":
   version "1.0.4"
