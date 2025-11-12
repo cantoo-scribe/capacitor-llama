@@ -25,7 +25,7 @@ Pod::Spec.new do |s|
   s.vendored_frameworks = "ios/Sources/CapacitorLlamaPlugin/capllama.xcframework"
   s.prepare_command = <<-SCRIPT
     FRAMEWORK_PATH="ios/Sources/CapacitorLlamaPlugin/capllama.xcframework"
-    RELEASE_URL="https://github.com/cantoo-scribe/capacitor-llama/releases/download/v0.0.1/capllama.xcframework.zip"
+    RELEASE_URL="https://github.com/cantoo-scribe/capacitor-llama/releases/download/v0.0.1-ios/capllama.xcframework.zip"
 
     if [ ! -d "$FRAMEWORK_PATH" ]; then
       echo "📦 Downloading capllama.xcframework..."
