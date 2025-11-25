@@ -9,7 +9,7 @@
 + (NSDictionary *)getFormattedChat:(double)contextId withMessages:(NSString *)messages withTemplate:(NSString *)chatTemplate withParams:(NSDictionary *)params;
 + (NSDictionary *)loadSession:(double)contextId withFilePath:(NSString *)filePath;
 + (int)saveSession:(double)contextId withFilePath:(NSString *)filePath withSize:(double)size;
-+ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams;
++ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary *tokenResult))onToken;
 + (void)stopCompletion:(double)contextId;
 + (NSDictionary *)tokenize:(double)contextId text:(NSString *)text;
 + (NSDictionary *)detokenize:(double)contextId tokens:(NSArray *)tokens;

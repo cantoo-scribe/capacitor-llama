@@ -118,7 +118,10 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
                 let formatResult = CAPLlama.getFormattedChat(contextId, withMessages: jsonString, withTemplate: chatTemplate, withParams: params)
                 params!["prompt"] = formatResult?["prompt"] as! String as String
             }
-            let result = CAPLlama.completion(contextId, withCompletionParams: params)
+            let result = CAPLlama.completion(contextId, withCompletionParams: params, onToken: { (tokenData: NSMutableDictionary?) in
+                guard let tokenData = tokenData else { return }
+                self.notifyListeners("onToken", data: ["contextId": contextId, "tokenResult": tokenData])
+            })
             if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {

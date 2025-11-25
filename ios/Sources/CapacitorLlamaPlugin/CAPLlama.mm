@@ -126,7 +126,7 @@ static dispatch_queue_t llamaDQueue;
     return count;
 }
 
-+ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams {
++ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary * tokenResult))onToken {
     LlamaContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
     if (context == nil) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context not found" userInfo:nil];
@@ -141,11 +141,7 @@ static dispatch_queue_t llamaDQueue;
                 completionResult = [context completion:completionParams
                     onToken:^(NSMutableDictionary *tokenResult) {
                         if (![completionParams[@"emit_partial_completion"] boolValue]) return;
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            // Replace with appropriate event handling logic
-                            NSLog(@"Token - Context ID: %f, Token Result: %@", contextId, tokenResult);
-                            [tokenResult release];
-                        });
+                        onToken(tokenResult);
                     }
                 ];
             }
