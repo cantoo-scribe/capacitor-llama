@@ -1,4 +1,4 @@
-import { WebPlugin } from '@capacitor/core';
+import { type PluginListenerHandle, WebPlugin } from '@capacitor/core';
 import { Wllama } from '@wllama/wllama/esm/index.js';
 import WasmFromCDN from '@wllama/wllama/esm/wasm-from-cdn.js';
 
@@ -8,6 +8,7 @@ import type {
   ContextParams,
   NativeCompletionResult,
   NativeLlamaContext,
+  TokenCallback,
 } from './definitions';
 
 // TODO: pass the correct url
@@ -18,6 +19,8 @@ import type {
 export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin {
   wllamas: Record<number, Wllama> = {};
   completionAbortControllers: Record<number, () => void> = {};
+  onTokenListeners: TokenCallback[] = [];
+
   async initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext> {
     const wllamaInstance = new Wllama(WasmFromCDN);
     await wllamaInstance.loadModelFromUrl(options.model, {
@@ -70,6 +73,20 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
     };
   }
 
+  async addListener(eventName: 'onToken', listenerFunc: TokenCallback): Promise<PluginListenerHandle> {
+    if (eventName === 'onToken') this.onTokenListeners.push(listenerFunc);
+    return {
+      remove: async () => {
+        const i = this.onTokenListeners.indexOf(listenerFunc);
+        this.onTokenListeners.splice(i, 1);
+      },
+    };
+  }
+
+  async removeAllListeners(): Promise<void> {
+    this.onTokenListeners = [];
+  }
+
   async completion(options: { id: number; params: CompletionParams }): Promise<NativeCompletionResult> {
     const wllama = this.wllamas[options.id];
     let result = '';
@@ -102,8 +119,15 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
       result = await wllama
         .createChatCompletion(history, {
           nPredict: options.params.n_predict,
-          onNewToken(_token, _piece, _currentText, { abortSignal }) {
+          onNewToken: (token, _piece, _currentText, { abortSignal }) => {
             if (abort) abortSignal();
+            this.onTokenListeners.forEach(async (listener) => {
+              // TODO: add completion_probabilities
+              listener({
+                contextId: options.id,
+                tokenResult: { token: (await this.detokenize({ id: options.id, tokens: [token] })).text },
+              });
+            });
           },
           sampling: {
             temp: options.params.temperature,
@@ -121,8 +145,15 @@ export class CapacitorLlamaWeb extends WebPlugin implements CapacitorLlamaPlugin
       result = await wllama
         .createCompletion(options.params.prompt, {
           nPredict: options.params.n_predict,
-          onNewToken(_token, _piece, _currentText, { abortSignal }) {
+          onNewToken: (token, _piece, _currentText, { abortSignal }) => {
             if (abort) abortSignal();
+            this.onTokenListeners.forEach(async (listener) => {
+              // TODO: add completion_probabilities
+              listener({
+                contextId: options.id,
+                tokenResult: { token: (await this.detokenize({ id: options.id, tokens: [token] })).text },
+              });
+            });
           },
           sampling: {
             temp: options.params.temperature,
