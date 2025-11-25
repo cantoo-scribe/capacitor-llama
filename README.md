@@ -271,11 +271,11 @@ From T, pick a set of properties whose keys are in the union K
 
 #### TokenEvent
 
-<code>{ contextId: number tokenResult: <a href="#tokendata">TokenData</a> }</code>
+<code>{ contextId: number; tokenResult: <a href="#tokendata">TokenData</a>; }</code>
 
 
 #### TokenData
 
-<code>{ token: string completion_probabilities?: NativeCompletionTokenProb[] }</code>
+<code>{ token: string; completion_probabilities?: NativeCompletionTokenProb[]; }</code>
 
 </docgen-api>
