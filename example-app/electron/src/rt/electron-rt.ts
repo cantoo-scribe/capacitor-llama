@@ -25,59 +25,44 @@ Object.keys(plugins).forEach((pluginKey) => {
       }
 
       functionList.forEach((functionName) => {
-        if (!contextApi[classKey][functionName]) {
+        if (!contextApi[classKey][functionName] && !['addListener', 'removeAllListeners'].includes(functionName)) {
           contextApi[classKey][functionName] = (...args) => ipcRenderer.invoke(`${classKey}-${functionName}`, ...args);
         }
       });
 
       // Events
-      if (plugins[pluginKey][classKey].prototype instanceof EventEmitter) {
-        const listeners: { [key: string]: { type: string; listener: (...args: any[]) => void } } = {};
-        const listenersOfTypeExist = (type) =>
-          !!Object.values(listeners).find((listenerObj) => listenerObj.type === type);
+      
+      const listeners: { [type: string]: ((...args: any[]) => void)[] } = {};
+      const listenersOfTypeExist = (type: string) => type in listeners
 
-        Object.assign(contextApi[classKey], {
-          addListener(type: string, callback: (...args) => void) {
-            const id = randomId();
+      Object.assign(contextApi[classKey], {
+        addListener(type: string, callback: (...args) => void) {
 
-            // Deduplicate events
-            if (!listenersOfTypeExist(type)) {
-              ipcRenderer.send(`event-add-${classKey}`, type);
+          // Deduplicate events
+          if (!listenersOfTypeExist(type)) {
+            listeners[type] = []
+            ipcRenderer.send(`event-add-${classKey}`, type);
+            const eventHandler = (_, ...args) => {
+              listeners[type].forEach(listener => listener(...args))
             }
-
-            const eventHandler = (_, ...args) => callback(...args);
-
             ipcRenderer.addListener(`event-${classKey}-${type}`, eventHandler);
-            listeners[id] = { type, listener: eventHandler };
+          }
+          listeners[type].push(callback)
 
-            return id;
-          },
-          removeListener(id: string) {
-            if (!listeners[id]) {
-              throw new Error('Invalid id');
+          return {
+            remove: () => {
+              const i = listeners[type].indexOf(callback);
+              if (i >= 0) listeners[type].splice(i, 1);
             }
-
-            const { type, listener } = listeners[id];
-
-            ipcRenderer.removeListener(`event-${classKey}-${type}`, listener);
-
-            delete listeners[id];
-
-            if (!listenersOfTypeExist(type)) {
-              ipcRenderer.send(`event-remove-${classKey}-${type}`);
-            }
-          },
-          removeAllListeners(type: string) {
-            Object.entries(listeners).forEach(([id, listenerObj]) => {
-              if (!type || listenerObj.type === type) {
-                ipcRenderer.removeListener(`event-${classKey}-${listenerObj.type}`, listenerObj.listener);
-                ipcRenderer.send(`event-remove-${classKey}-${listenerObj.type}`);
-                delete listeners[id];
-              }
-            });
-          },
-        });
-      }
+          }
+        },
+        removeAllListeners() {
+          Object.entries(listeners).forEach(([type, currListeners]) => {
+            currListeners.splice(0, currListeners.length)
+          });
+        },
+      });
+      
     });
 });
 

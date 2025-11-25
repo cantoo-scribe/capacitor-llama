@@ -1,3 +1,4 @@
+import type { PluginListenerHandle } from '@capacitor/core';
 import type { Token, TokenBias, SequenceEvaluateOptions } from 'node-llama-cpp';
 
 import type {
@@ -6,12 +7,28 @@ import type {
   ContextParams,
   NativeCompletionResult,
   NativeLlamaContext,
+  TokenCallback,
 } from '../../src/definitions';
 
 export class ElectronLlama implements CapacitorLlamaPlugin {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   contexts: Record<number, import('node-llama-cpp').LlamaContext> = {};
   completionAbortControllers: Record<number, AbortController> = {};
+  onTokenListeners: TokenCallback[] = [];
+
+  async addListener(eventName: 'onToken', listenerFunc: TokenCallback): Promise<PluginListenerHandle> {
+    if (eventName === 'onToken') this.onTokenListeners.push(listenerFunc);
+    return {
+      remove: async () => {
+        const i = this.onTokenListeners.indexOf(listenerFunc);
+        this.onTokenListeners.splice(i, 1);
+      },
+    };
+  }
+
+  async removeAllListeners(): Promise<void> {
+    this.onTokenListeners = [];
+  }
 
   async completion(options: { id: number; params: CompletionParams }): Promise<NativeCompletionResult> {
     const { id, params } = options;
@@ -68,6 +85,12 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
           minP: params.min_p,
           topK: params.top_k,
           topP: params.top_p,
+          onTextChunk: (text) => {
+            this.onTokenListeners.forEach((listener) => {
+              // TODO: add completion_probabilities
+              listener({ contextId: id, tokenResult: { token: text } });
+            });
+          },
         })
         .finally(() => {
           delete this.completionAbortControllers[id];
@@ -98,13 +121,19 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
     const iterator = sequence.evaluateWithMetadata(tokens, metadataOptions, evalOptions);
 
     for await (const item of iterator) {
-      completion_probabilities.push({
-        content: context.model.detokenize([item.token]),
-        probs: params.n_probs
-          ? [...item.probabilities.entries()]
-              .slice(0, params.n_probs)
-              .map(([tk, prob]) => ({ tok_str: context.model.detokenize([tk]), prob }))
-          : [],
+      const content = context.model.detokenize([item.token]);
+      const probs = params.n_probs
+        ? [...item.probabilities.entries()]
+            .slice(0, params.n_probs)
+            .map(([tk, prob]) => ({ tok_str: context.model.detokenize([tk]), prob }))
+        : [];
+      const completionProb = {
+        content,
+        probs,
+      };
+      completion_probabilities.push(completionProb);
+      this.onTokenListeners.forEach((listener) => {
+        listener({ contextId: id, tokenResult: { token: content, completion_probabilities: [completionProb] } });
       });
 
       if (abortController.signal.aborted || (params.n_predict && completion_probabilities.length >= params.n_predict))

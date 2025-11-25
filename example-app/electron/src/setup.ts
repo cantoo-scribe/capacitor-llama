@@ -2,7 +2,6 @@ import type { CapacitorElectronConfig } from '@capacitor-community/electron';
 import {
   CapElectronEventEmitter,
   CapacitorSplashScreen,
-  setupCapacitorElectronPlugins,
 } from '@capacitor-community/electron';
 import chokidar from 'chokidar';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -11,6 +10,7 @@ import electronIsDev from 'electron-is-dev';
 import electronServe from 'electron-serve';
 import windowStateKeeper from 'electron-window-state';
 import { join } from 'path';
+import { setupCapacitorElectronPlugins } from './setupCapacitorElectronPlugins';
 
 // Define components for a watcher to detect when the webapp is changed so we can reload in Dev mode.
 const reloadWatcher = {

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const CapacitorLlama = require('../../../node_modules/capacitor-llama/electron/dist/plugin.js');
+const CantooCapacitorLlama = require('../../../../node_modules/@cantoo/capacitor-llama/electron/dist/plugin.js');
 
 module.exports = {
-  CapacitorLlama,
+  CantooCapacitorLlama,
 }
