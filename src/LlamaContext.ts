@@ -1,5 +1,11 @@
 import { CapacitorLlama } from './CapacitorLlama';
-import type { CompletionParams, ContextParams, NativeCompletionResult, NativeLlamaContext } from './definitions';
+import type {
+  CompletionParams,
+  ContextParams,
+  NativeCompletionResult,
+  NativeLlamaContext,
+  TokenCallback,
+} from './definitions';
 
 let contextCounter = 0;
 
@@ -30,16 +36,29 @@ export class LlamaContext {
     return !!this.model.chatTemplates.llamaChat;
   }
 
-  async completion(params: CompletionParams): Promise<NativeCompletionResult> {
+  async completion(
+    args: Omit<CompletionParams, 'emit_partial_completion'> & { onToken?: TokenCallback },
+  ): Promise<NativeCompletionResult> {
+    const { onToken, ...params } = args;
     const nativeParams = {
       ...params,
       // TODO: implement callbacks to enable partial completions
-      emit_partial_completion: false,
+      emit_partial_completion: !!onToken,
     };
+    let removeListener: () => Promise<void> | undefined;
+    if (onToken) {
+      const { remove } = await CapacitorLlama.addListener('onToken', ({ contextId, tokenResult }) => {
+        if (contextId === this.id) onToken({ contextId, tokenResult });
+      });
+
+      removeListener = remove;
+    }
 
     // TODO: implement jinja on the native code
     // TODO: add the params to the same level of id
-    return CapacitorLlama.completion({ id: this.id, params: nativeParams });
+    return CapacitorLlama.completion({ id: this.id, params: nativeParams }).finally(() => {
+      removeListener?.();
+    });
   }
 
   async release(): Promise<void> {

@@ -1,6 +1,5 @@
 package com.capllama;
 
-import android.content.res.AssetManager;
 import android.os.Build;
 import android.util.Log;
 import com.getcapacitor.JSArray;
@@ -10,8 +9,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.StringBuilder;
-import java.util.HashMap;
-import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -178,27 +175,10 @@ public class LlamaContext {
     }
 
     private void emitPartialCompletion(JSObject tokenResult) {
-        // WritableMap event = Arguments.createMap();
-        // event.putInt("contextId", LlamaContext.this.id);
-        // event.putMap("tokenResult", tokenResult);
-        // eventEmitter.emit("@RNLlama_onToken", event);
-    }
-
-    private static class PartialCompletionCallback {
-
-        LlamaContext context;
-        boolean emitNeeded;
-
-        public PartialCompletionCallback(LlamaContext context, boolean emitNeeded) {
-            this.context = context;
-            this.emitNeeded = emitNeeded;
-        }
-
-        void onPartialCompletion(JSObject tokenResult) {
-            if (this.emitNeeded) {
-                context.emitPartialCompletion(tokenResult);
-            }
-        }
+        //        JSObject ret = new JSObject();
+        //        ret.put("contextId", this.id);
+        //        ret.put("tokenResult", tokenResult);
+        //        notifyListeners("onToken", ret);
     }
 
     // public WritableMap loadSession(String path) {
@@ -223,7 +203,7 @@ public class LlamaContext {
     //   return saveSession(this.context, path, size);
     // }
 
-    public JSObject completion(JSObject params) {
+    public JSObject completion(JSObject params, PartialCompletionCallback callback) {
         if (!params.has("prompt")) {
             throw new IllegalArgumentException("Missing required parameter: prompt");
         }
@@ -337,8 +317,7 @@ public class LlamaContext {
                 (float) params.optDouble("top_n_sigma", -1.0f),
                 // String[] dry_sequence_breakers, when undef, we use the default definition from common.h
                 dry_sequence_breakers,
-                // PartialCompletionCallback partial_completion_callback
-                new PartialCompletionCallback(this, params.getBoolean("emit_partial_completion", false))
+                callback
             );
             if (result.has("error")) {
                 throw new IllegalStateException(result.getString("error"));

@@ -127,6 +127,7 @@ window.completion = async () => {
     messages: chat,
     stop: stopWords,
     n_predict: 1000,
+    onToken: (event) => console.log('onToken', event)
   })
   pushMessage({
     role: 'assistant',

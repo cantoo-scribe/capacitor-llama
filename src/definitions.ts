@@ -1,3 +1,5 @@
+import type { PluginListenerHandle } from '@capacitor/core';
+
 export type NativeLlamaContext = {
   model: {
     desc: string;
@@ -215,8 +217,7 @@ export type NativeCompletionParams = {
   emit_partial_completion: boolean;
 };
 
-export type CompletionParams = Omit<NativeCompletionParams, 'emit_partial_completion' | 'prompt'> &
-  CompletionBaseParams;
+export type CompletionParams = Omit<NativeCompletionParams, 'prompt'> & CompletionBaseParams;
 
 export type NativeCompletionTokenProbItem = {
   tok_str: string;
@@ -249,6 +250,17 @@ export type FormattedLlama = {
   prompt: string;
 };
 
+export type TokenData = {
+  token: string;
+  completion_probabilities?: NativeCompletionTokenProb[];
+};
+
+export type TokenEvent = {
+  contextId: number;
+  tokenResult: TokenData;
+};
+
+export type TokenCallback = (event: TokenEvent) => void;
 export interface CapacitorLlamaPlugin {
   initContext(options: ContextParams & { id: number }): Promise<NativeLlamaContext>;
 
@@ -265,6 +277,13 @@ export interface CapacitorLlamaPlugin {
   detokenize(options: { id: number; tokens: number[] }): Promise<{ text: string }>;
 
   getVocab(options: { id: number }): Promise<{ vocab: string[] }>;
+
+  addListener(eventName: 'onToken', listenerFunc: TokenCallback): Promise<PluginListenerHandle>;
+
+  /**
+   * Removes all listeners
+   */
+  removeAllListeners(): Promise<void>;
 }
 
 export type NativeContextParams = {

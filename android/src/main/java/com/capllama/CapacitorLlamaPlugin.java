@@ -1,5 +1,6 @@
 package com.capllama;
 
+import android.util.Log;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -18,9 +19,34 @@ public class CapacitorLlamaPlugin extends Plugin {
         call.resolve(res);
     }
 
+    private class PartialCompletionCallbackWithListeners implements PartialCompletionCallback {
+
+        int contextId;
+        boolean emitNeeded;
+
+        public PartialCompletionCallbackWithListeners(int contextId, boolean emitNeeded) {
+            this.contextId = contextId;
+            this.emitNeeded = emitNeeded;
+        }
+
+        public void onPartialCompletion(JSObject tokenResult) {
+            if (this.emitNeeded) {
+                JSObject ret = new JSObject();
+                ret.put("contextId", this.contextId);
+                ret.put("tokenResult", tokenResult);
+                notifyListeners("onToken", ret);
+            }
+        }
+    }
+
     @PluginMethod
     public void completion(PluginCall call) {
-        JSObject res = implementation.completion(call.getData());
+        JSObject params = call.getData();
+        JSObject innerParams = params.getJSObject("params");
+        JSObject res = implementation.completion(
+            params,
+            new PartialCompletionCallbackWithListeners(params.optInt("id", 0), innerParams.optBoolean("emit_partial_completion", false))
+        );
         call.resolve(res);
     }
 

@@ -21,6 +21,9 @@ npx cap sync
 * [`tokenize(...)`](#tokenize)
 * [`detokenize(...)`](#detokenize)
 * [`getVocab(...)`](#getvocab)
+* [`addListener('onToken', ...)`](#addlistenerontoken-)
+* [`removeAllListeners()`](#removealllisteners)
+* [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
@@ -138,6 +141,43 @@ getVocab(options: { id: number; }) => Promise<{ vocab: string[]; }>
 --------------------
 
 
+### addListener('onToken', ...)
+
+```typescript
+addListener(eventName: 'onToken', listenerFunc: TokenCallback) => Promise<PluginListenerHandle>
+```
+
+| Param              | Type                                                    |
+| ------------------ | ------------------------------------------------------- |
+| **`eventName`**    | <code>'onToken'</code>                                  |
+| **`listenerFunc`** | <code><a href="#tokencallback">TokenCallback</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+--------------------
+
+
+### removeAllListeners()
+
+```typescript
+removeAllListeners() => Promise<void>
+```
+
+Removes all listeners
+
+--------------------
+
+
+### Interfaces
+
+
+#### PluginListenerHandle
+
+| Prop         | Type                                      |
+| ------------ | ----------------------------------------- |
+| **`remove`** | <code>() =&gt; Promise&lt;void&gt;</code> |
+
+
 ### Type Aliases
 
 
@@ -201,7 +241,7 @@ From T, pick a set of properties whose keys are in the union K
 
 #### CompletionParams
 
-<code><a href="#omit">Omit</a>&lt;<a href="#nativecompletionparams">NativeCompletionParams</a>, 'emit_partial_completion' | 'prompt'&gt; & <a href="#completionbaseparams">CompletionBaseParams</a></code>
+<code><a href="#omit">Omit</a>&lt;<a href="#nativecompletionparams">NativeCompletionParams</a>, 'prompt'&gt; & <a href="#completionbaseparams">CompletionBaseParams</a></code>
 
 
 #### NativeCompletionParams
@@ -222,5 +262,20 @@ From T, pick a set of properties whose keys are in the union K
 #### CompletionResponseFormat
 
 <code>{ type: 'text' | 'json_object' | 'json_schema'; json_schema?: { strict?: boolean; schema: object; }; schema?: object; // for json_object type }</code>
+
+
+#### TokenCallback
+
+<code>(event: <a href="#tokenevent">TokenEvent</a>): void</code>
+
+
+#### TokenEvent
+
+<code>{ contextId: number tokenResult: <a href="#tokendata">TokenData</a> }</code>
+
+
+#### TokenData
+
+<code>{ token: string completion_probabilities?: NativeCompletionTokenProb[] }</code>
 
 </docgen-api>

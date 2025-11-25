@@ -207,7 +207,7 @@ public class CapacitorLlama {
     //   tasks.put(task, "saveSession-" + contextId);
     // }
 
-    public JSObject completion(final JSObject params) {
+    public JSObject completion(final JSObject params, PartialCompletionCallback callback) {
         final int contextId = (int) params.getInteger("id", -1);
         try {
             LlamaContext context = contexts.get(contextId);
@@ -231,7 +231,7 @@ public class CapacitorLlama {
                 Log.d("debug", "completion prompt: " + formatResult.getString("prompt"));
                 completionParams.put("prompt", formatResult.getString("prompt"));
             }
-            JSObject result = context.completion(completionParams);
+            JSObject result = context.completion(completionParams, callback);
             return result;
         } catch (Exception e) {
             Log.e(NAME, "Failed completion", e);
