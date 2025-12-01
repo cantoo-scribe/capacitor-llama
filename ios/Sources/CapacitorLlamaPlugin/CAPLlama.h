@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
+#import <Capacitor/Capacitor.h>
+#import <Capacitor/Capacitor-Swift.h>
 
-@interface CAPLlama : NSObject 
+@interface CAPLlama : NSObject
 
 + (void)toggleNativeLog:(BOOL)enabled;
 + (void)setContextLimit:(double)limit;
@@ -9,7 +11,7 @@
 + (NSDictionary *)getFormattedChat:(double)contextId withMessages:(NSString *)messages withTemplate:(NSString *)chatTemplate withParams:(NSDictionary *)params;
 + (NSDictionary *)loadSession:(double)contextId withFilePath:(NSString *)filePath;
 + (int)saveSession:(double)contextId withFilePath:(NSString *)filePath withSize:(double)size;
-+ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary *tokenResult))onToken;
++ (void)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary *tokenResult))onToken call:(CAPPluginCall *)call;
 + (void)stopCompletion:(double)contextId;
 + (NSDictionary *)tokenize:(double)contextId text:(NSString *)text;
 + (NSDictionary *)detokenize:(double)contextId tokens:(NSArray *)tokens;

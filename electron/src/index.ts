@@ -94,10 +94,10 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
         })
         .finally(() => {
           delete this.completionAbortControllers[id];
+          !sequence.disposed && sequence.dispose();
+          !session.disposed && session.dispose();
         });
 
-      !sequence.disposed && sequence.dispose();
-      !session.disposed && session.dispose();
       return {
         content: result,
         text: result,

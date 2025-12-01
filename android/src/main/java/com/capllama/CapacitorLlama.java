@@ -1,18 +1,12 @@
 package com.capllama;
 
-// import androidx.annotation.NonNull;
 import android.util.Log;
 import com.getcapacitor.JSObject;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.PushbackInputStream;
-// import android.os.Build;
-// import android.os.Handler;
-// import android.os.AsyncTask;
-
 import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.json.JSONArray;
 
 public class CapacitorLlama {
@@ -21,7 +15,9 @@ public class CapacitorLlama {
 
     public CapacitorLlama() {}
 
-    // private HashMap<AsyncTask, String> tasks = new HashMap<>();
+    // TODO: release the executor service on destroy
+    // executorService.shutdown()
+    private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private HashMap<Integer, LlamaContext> contexts = new HashMap<>();
 
@@ -87,58 +83,68 @@ public class CapacitorLlama {
     //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     // }
 
-    public JSObject initContext(double id, final JSObject params) {
+    public CompletableFuture<JSObject> initContext(double id, final JSObject params) {
         final int contextId = (int) id;
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context != null) {
-                throw new Exception("Context already exists");
-            }
-            if (llamaContextLimit > -1 && contexts.size() >= llamaContextLimit) {
-                throw new Exception("Context limit reached");
-            }
-            LlamaContext llamaContext = new LlamaContext(contextId, params);
-            if (llamaContext.getContext() == 0) {
-                throw new Exception("Failed to initialize context");
-            }
-            contexts.put(contextId, llamaContext);
-            JSObject result = new JSObject();
-            // result.put("contextId", contextId);
-            result.put("gpu", false);
-            result.put("reasonNoGPU", "Currently not supported");
-            result.put("model", llamaContext.getModelDetails());
-            // result.put("androidLib", llamaContext.getLoadedLibrary());
-            return result;
-        } catch (Exception e) {
-            return null;
-        }
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context != null) {
+                        throw new Exception("Context already exists");
+                    }
+                    if (llamaContextLimit > -1 && contexts.size() >= llamaContextLimit) {
+                        throw new Exception("Context limit reached");
+                    }
+                    LlamaContext llamaContext = new LlamaContext(contextId, params);
+                    if (llamaContext.getContext() == 0) {
+                        throw new Exception("Failed to initialize context");
+                    }
+                    contexts.put(contextId, llamaContext);
+                    JSObject result = new JSObject();
+                    // result.put("contextId", contextId);
+                    result.put("gpu", false);
+                    result.put("reasonNoGPU", "Currently not supported");
+                    result.put("model", llamaContext.getModelDetails());
+                    // result.put("androidLib", llamaContext.getLoadedLibrary());
+                    return result;
+                } catch (Exception e) {
+                    return null;
+                }
+            },
+            executor
+        );
     }
 
-    public JSObject getFormattedChat(/* double id, final String messages, final String chatTemplate, */ final JSObject params) {
+    public CompletableFuture<JSObject> getFormattedChat(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
-        try {
-            LlamaContext context = contexts.get(contextId);
-            String messages = params.getString("messages", "");
-            String chatTemplate = params.getString("chatTemplate", "");
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    String messages = params.getString("messages", "");
+                    String chatTemplate = params.getString("chatTemplate", "");
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
 
-            if (params.getBoolean("jinja", false)) {
-                JSObject result = context.getFormattedChatWithJinja(messages, chatTemplate, params);
-                if (result.has("_error")) {
-                    throw new Exception(result.getString("_error", "error"));
+                    if (params.getBoolean("jinja", false)) {
+                        JSObject result = context.getFormattedChatWithJinja(messages, chatTemplate, params);
+                        if (result.has("_error")) {
+                            throw new Exception(result.getString("_error", "error"));
+                        }
+                        return result;
+                    }
+                    JSObject result = new JSObject();
+                    String formattedChat = context.getFormattedChat(messages, chatTemplate);
+                    result.put("prompt", formattedChat);
+                    return result;
+                } catch (Exception e) {
+                    Log.e("err", "getFormattedChat: ", e);
+                    return null;
                 }
-                return result;
-            }
-            JSObject result = new JSObject();
-            String formattedChat = context.getFormattedChat(messages, chatTemplate);
-            result.put("prompt", formattedChat);
-            return result;
-        } catch (Exception e) {
-            Log.e("err", "getFormattedChat: ", e);
-            return null;
-        }
+            },
+            executor
+        );
     }
 
     // public void loadSession(double id, final String path, Promise promise) {
@@ -207,95 +213,115 @@ public class CapacitorLlama {
     //   tasks.put(task, "saveSession-" + contextId);
     // }
 
-    public JSObject completion(final JSObject params, PartialCompletionCallback callback) {
+    public CompletableFuture<JSObject> completion(final JSObject params, PartialCompletionCallback callback) {
         final int contextId = (int) params.getInteger("id", -1);
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
-            //      if (context.isPredicting()) {
-            //        throw new Exception("Context is busy");
-            //      }
-            // TODO: implement default parameters
-            JSObject completionParams = params.getJSObject("params");
-            assert completionParams != null;
-            JSONArray messages = completionParams.optJSONArray("messages");
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
+                    //      if (context.isPredicting()) {
+                    //        throw new Exception("Context is busy");
+                    //      }
+                    // TODO: implement default parameters
+                    JSObject completionParams = params.getJSObject("params");
+                    assert completionParams != null;
+                    JSONArray messages = completionParams.optJSONArray("messages");
 
-            completionParams.put("emit_partial_completion", false);
-            if (messages != null) {
-                JSObject formatParams = new JSObject();
-                formatParams.put("id", contextId);
-                formatParams.put("messages", messages.toString());
-                JSObject formatResult = this.getFormattedChat(formatParams);
-                Log.d("debug", "completion prompt: " + formatResult.getString("prompt"));
-                completionParams.put("prompt", formatResult.getString("prompt"));
-            }
-            JSObject result = context.completion(completionParams, callback);
-            return result;
-        } catch (Exception e) {
-            Log.e(NAME, "Failed completion", e);
-            return null;
-        }
-        // tasks.remove(this);
-        // tasks.put(task, "completion-" + contextId);
+                    completionParams.put("emit_partial_completion", false);
+                    if (messages != null) {
+                        String prompt = context.getFormattedChat(messages.toString(), "");
+                        Log.d("debug", "completion prompt: " + prompt);
+                        completionParams.put("prompt", prompt);
+                    }
+                    JSObject result = context.completion(completionParams, callback);
+                    return result;
+                } catch (Exception e) {
+                    Log.e(NAME, "Failed completion", e);
+                    return null;
+                }
+            },
+            executor
+        );
     }
 
-    public void stopCompletion(double id) {
+    public CompletableFuture<Void> stopCompletion(double id) {
         final int contextId = (int) id;
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
-            context.stopCompletion();
-        } catch (Exception e) {}
+        return CompletableFuture.runAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
+                    context.stopCompletion();
+                } catch (Exception e) {}
+            },
+            executor
+        );
     }
 
-    public JSObject tokenize(final JSObject params) {
+    public CompletableFuture<JSObject> tokenize(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
-            String text = params.getString("text");
-            return context.tokenize(text);
-        } catch (Exception e) {
-            Log.e(NAME, "Failed tokenize", e);
-            return null;
-        }
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
+                    String text = params.getString("text");
+                    return context.tokenize(text);
+                } catch (Exception e) {
+                    Log.e(NAME, "Failed tokenize", e);
+                    return null;
+                }
+            },
+            executor
+        );
     }
 
-    public JSObject detokenize(final JSObject params) {
+    public CompletableFuture<JSObject> detokenize(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
-            String text = context.detokenize(params);
-            JSObject result = new JSObject();
-            result.put("text", text);
-            return result;
-        } catch (Exception e) {
-            Log.e(NAME, "Failed detokenize", e);
-            return null;
-        }
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
+                    String text = context.detokenize(params);
+                    JSObject result = new JSObject();
+                    result.put("text", text);
+                    return result;
+                } catch (Exception e) {
+                    Log.e(NAME, "Failed detokenize", e);
+                    return null;
+                }
+            },
+            executor
+        );
     }
 
-    public JSObject getVocab(final JSObject params) {
+    public CompletableFuture<JSObject> getVocab(final JSObject params) {
         final int contextId = (int) params.getInteger("id", -1);
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context not found");
-            }
-            return context.getVocab();
-        } catch (Exception e) {
-            Log.e(NAME, "Failed tokenize", e);
-            return null;
-        }
+        return CompletableFuture.supplyAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context not found");
+                    }
+                    return context.getVocab();
+                } catch (Exception e) {
+                    Log.e(NAME, "Failed tokenize", e);
+                    return null;
+                }
+            },
+            executor
+        );
     }
 
     // public void embedding(double id, final String text, final ReadableMap params, final Promise promise) {
@@ -460,64 +486,36 @@ public class CapacitorLlama {
     //   tasks.put(task, "getLoadedLoraAdapters-" + contextId);
     // }
 
-    public void releaseContext(double id, final JSObject params) {
+    public CompletableFuture<Void> releaseContext(double id, final JSObject params) {
         final int contextId = (int) id;
-        try {
-            LlamaContext context = contexts.get(contextId);
-            if (context == null) {
-                throw new Exception("Context " + id + " not found");
-            }
-            context.interruptLoad();
-            context.stopCompletion();
-            context.release();
-            contexts.remove(contextId);
-        } catch (Exception e) {}
-        //   AsyncTask task = new AsyncTask<Void, Void, Void>() {
-        //     private Exception exception;
-
-        //     @Override
-        //     protected Void doInBackground(Void... voids) {
-        //       try {
-        //         LlamaContext context = contexts.get(contextId);
-        //         if (context == null) {
-        //           throw new Exception("Context " + id + " not found");
-        //         }
-        //         context.interruptLoad();
-        //         context.stopCompletion();
-        //         AsyncTask completionTask = null;
-        //         for (AsyncTask task : tasks.keySet()) {
-        //           if (tasks.get(task).equals("completion-" + contextId)) {
-        //             task.get();
-        //             break;
-        //           }
-        //         }
-        //         context.release();
-        //         contexts.remove(contextId);
-        //       } catch (Exception e) {
-        //         exception = e;
-        //       }
-        //       return null;
-        //     }
-
-        //     @Override
-        //     protected void onPostExecute(Void result) {
-        //       if (exception != null) {
-        //         promise.reject(exception);
-        //         return;
-        //       }
-        //       promise.resolve(null);
-        //       tasks.remove(this);
-        //     }
-        //   }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-        //   tasks.put(task, "releaseContext-" + contextId);
+        return CompletableFuture.runAsync(
+            () -> {
+                try {
+                    LlamaContext context = contexts.get(contextId);
+                    if (context == null) {
+                        throw new Exception("Context " + id + " not found");
+                    }
+                    context.interruptLoad();
+                    context.stopCompletion();
+                    context.release();
+                    contexts.remove(contextId);
+                } catch (Exception e) {}
+            },
+            executor
+        );
     }
 
-    public void releaseAllContexts() {
-        for (LlamaContext context : contexts.values()) {
-            context.stopCompletion();
-            context.release();
-        }
-        contexts.clear();
+    public CompletableFuture<Void> releaseAllContexts() {
+        return CompletableFuture.runAsync(
+            () -> {
+                for (LlamaContext context : contexts.values()) {
+                    context.stopCompletion();
+                    context.release();
+                }
+                contexts.clear();
+            },
+            executor
+        );
     }
     // @Override
     // public void onHostResume() {

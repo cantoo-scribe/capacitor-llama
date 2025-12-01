@@ -126,7 +126,8 @@ static dispatch_queue_t llamaDQueue;
     return count;
 }
 
-+ (NSDictionary *)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary * tokenResult))onToken {
++ (void)completion:(double)contextId withCompletionParams:(NSDictionary *)completionParams onToken:(void (^)(NSMutableDictionary * tokenResult))onToken call:(CAPPluginCall *)call {
+
     LlamaContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
     if (context == nil) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context not found" userInfo:nil];
@@ -134,23 +135,29 @@ static dispatch_queue_t llamaDQueue;
     if ([context isPredicting]) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context is busy" userInfo:nil];
     }
-    __block NSDictionary *completionResult;
-    dispatch_sync(llamaDQueue, ^{
+
+    dispatch_async(llamaDQueue, ^{
         @try {
             @autoreleasepool {
-                completionResult = [context completion:completionParams
+              NSDictionary *completionResult = [context completion:completionParams
                     onToken:^(NSMutableDictionary *tokenResult) {
                         if (![completionParams[@"emit_partial_completion"] boolValue]) return;
                         onToken(tokenResult);
                     }
                 ];
+              // Final result — resolve the call
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [call resolve:completionResult];
+                });
             }
         } @catch (NSException *exception) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [call reject:exception.reason];
+            });
             @throw exception;
             [context stopCompletion];
         }
     });
-    return completionResult;
 }
 
 + (void)stopCompletion:(double)contextId {

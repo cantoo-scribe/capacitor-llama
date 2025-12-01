@@ -6,6 +6,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.concurrent.CompletableFuture;
 
 @CapacitorPlugin(name = "CapacitorLlama")
 public class CapacitorLlamaPlugin extends Plugin {
@@ -15,8 +16,8 @@ public class CapacitorLlamaPlugin extends Plugin {
     @PluginMethod
     public void initContext(PluginCall call) {
         Integer id = call.getInt("id", -1);
-        JSObject res = implementation.initContext(id, call.getData());
-        call.resolve(res);
+        CompletableFuture<JSObject> future = implementation.initContext(id, call.getData());
+        future.thenAccept(call::resolve);
     }
 
     private class PartialCompletionCallbackWithListeners implements PartialCompletionCallback {
@@ -43,54 +44,54 @@ public class CapacitorLlamaPlugin extends Plugin {
     public void completion(PluginCall call) {
         JSObject params = call.getData();
         JSObject innerParams = params.getJSObject("params");
-        JSObject res = implementation.completion(
+        CompletableFuture<JSObject> future = implementation.completion(
             params,
             new PartialCompletionCallbackWithListeners(params.optInt("id", 0), innerParams.optBoolean("emit_partial_completion", false))
         );
-        call.resolve(res);
+        future.thenAccept(call::resolve);
     }
 
     @PluginMethod
     public void getFormattedChat(PluginCall call) {
-        JSObject res = implementation.getFormattedChat(call.getData());
-        call.resolve(res);
+        CompletableFuture<JSObject> future = implementation.getFormattedChat(call.getData());
+        future.thenAccept(call::resolve);
     }
 
     @PluginMethod
     public void releaseAllContexts(PluginCall call) {
-        implementation.releaseAllContexts();
-        call.resolve();
+        CompletableFuture<Void> future = implementation.releaseAllContexts();
+        future.thenAccept((v) -> call.resolve());
     }
 
     @PluginMethod
     public void releaseContext(PluginCall call) {
         Integer id = call.getInt("id", -1);
-        implementation.releaseContext(id, call.getData());
-        call.resolve();
+        CompletableFuture<Void> future = implementation.releaseContext(id, call.getData());
+        future.thenAccept((v) -> call.resolve());
     }
 
     @PluginMethod
     public void stopCompletion(PluginCall call) {
         Integer id = call.getInt("id", -1);
-        implementation.stopCompletion(id);
-        call.resolve();
+        CompletableFuture<Void> future = implementation.stopCompletion(id);
+        future.thenAccept((v) -> call.resolve());
     }
 
     @PluginMethod
     public void detokenize(PluginCall call) {
-        JSObject res = implementation.detokenize(call.getData());
-        call.resolve(res);
+        CompletableFuture<JSObject> future = implementation.detokenize(call.getData());
+        future.thenAccept(call::resolve);
     }
 
     @PluginMethod
     public void tokenize(PluginCall call) {
-        JSObject res = implementation.tokenize(call.getData());
-        call.resolve(res);
+        CompletableFuture<JSObject> future = implementation.tokenize(call.getData());
+        future.thenAccept(call::resolve);
     }
 
     @PluginMethod
     public void getVocab(PluginCall call) {
-        JSObject res = implementation.getVocab(call.getData());
-        call.resolve(res);
+        CompletableFuture<JSObject> future = implementation.getVocab(call.getData());
+        future.thenAccept(call::resolve);
     }
 }
