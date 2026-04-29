@@ -7,7 +7,7 @@
 + (void)toggleNativeLog:(BOOL)enabled;
 + (void)setContextLimit:(double)limit;
 + (NSDictionary *)modelInfo:(NSString *)path withSkip:(NSArray *)skip;
-+ (NSDictionary *)initContext:(double)contextId withContextParams:(NSDictionary *)contextParams;
++ (NSDictionary *)initContext:(double)contextId withContextParams:(NSDictionary *)contextParams error:(NSError **)error;
 + (NSDictionary *)getFormattedChat:(double)contextId withMessages:(NSString *)messages withTemplate:(NSString *)chatTemplate withParams:(NSDictionary *)params;
 + (NSDictionary *)loadSession:(double)contextId withFilePath:(NSString *)filePath;
 + (int)saveSession:(double)contextId withFilePath:(NSString *)filePath withSize:(double)size;

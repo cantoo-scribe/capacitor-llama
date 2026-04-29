@@ -396,7 +396,13 @@ Java_com_capllama_LlamaContext_initContext(
         defaultParams.progress_callback_user_data = cb_ctx;
     }
 
-    bool is_model_loaded = llama->loadModel(defaultParams);
+    bool is_model_loaded = false;
+
+    try {
+        is_model_loaded = llama->loadModel(defaultParams);
+    } catch (const std::exception &e) {
+        LOGE("[CapLlama] Error occurred while loading model: %s", e.what());
+    }
 
     env->ReleaseStringUTFChars(model_path_str, model_path_chars);
     env->ReleaseStringUTFChars(chat_template, chat_template_chars);
@@ -405,7 +411,6 @@ Java_com_capllama_LlamaContext_initContext(
     env->ReleaseStringUTFChars(cache_type_v, cache_type_v_chars);
 
     LOGI("[CapLlama] is_model_loaded %s", (is_model_loaded ? "true" : "false"));
-    LOGI("[CapLlama] lib updated 2");
     if (is_model_loaded) {
         if (embedding && llama_model_has_encoder(llama->model) && llama_model_has_decoder(llama->model)) {
             LOGI("[CapLlama] computing embeddings in encoder-decoder models is not supported");
@@ -415,6 +420,7 @@ Java_com_capllama_LlamaContext_initContext(
         context_map[(long) llama->ctx] = llama;
     } else {
         llama_free(llama->ctx);
+        return -1;
     }
 
     std::vector<common_adapter_lora_info> lora;

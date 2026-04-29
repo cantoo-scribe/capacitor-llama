@@ -52,6 +52,7 @@ window.loadModel = async () => {
     return
   }
   console.log('model path: ', modelPath)
+  try {
   context = await LlamaContext.from({
     // for ios and android
     // model: modelPath,
@@ -69,6 +70,9 @@ window.loadModel = async () => {
   showBtn('releaseModel')
   console.log('loaded model: ', context.model)
   console.log('result', context.id, context.model.desc, context.model.size, context.model.nVocab)
+  } catch (err) {
+    console.log('load failed', err)
+  }
 }
 
 // @ts-ignore

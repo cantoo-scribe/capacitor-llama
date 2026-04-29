@@ -211,8 +211,12 @@
         };
         defaultParams.progress_callback_user_data = context;
     }
-
-    context->is_model_loaded = context->llama->loadModel(defaultParams);
+    try {
+        context->is_model_loaded = context->llama->loadModel(defaultParams);
+    } catch (const std::exception &e) {
+        delete context->llama;
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    }
 
     if (
         params[@"embedding"] && [params[@"embedding"] boolValue] &&

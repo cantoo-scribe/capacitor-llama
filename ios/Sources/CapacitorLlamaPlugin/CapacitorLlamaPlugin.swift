@@ -23,21 +23,20 @@ public class CapacitorLlamaPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func initContext(_ call: CAPPluginCall) {
+        guard let contextId = call.getDouble("id") else {
+            call.reject("Missing required parameter 'contextId'.")
+            return
+        }
+
         do {
-            guard let contextId = call.getDouble("id") else {
-                call.reject("Missing required parameter 'contextId'.")
-                return
-            }
-            let result = CAPLlama.initContext(contextId, withContextParams: call.options)
-            
+            let result = try CAPLlama.initContext(contextId, withContextParams: call.options)
             if let resultDict = result as? [String: Any] {
                 call.resolve(resultDict)
             } else {
                 call.reject("Invalid result format from CapacitorLlamaPlugin.initContext")
             }
-
-        } catch let error as NSException {
-            call.reject(error.reason ?? "Unknown error")
+        } catch {
+            call.reject(error.localizedDescription)
         }
     }
 

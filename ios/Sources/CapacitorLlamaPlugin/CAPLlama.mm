@@ -30,7 +30,7 @@ static dispatch_queue_t llamaDQueue;
     return [LlamaContext modelInfo:path skip:skip];
 }
 
-+ (NSDictionary *)initContext:(double)contextId withContextParams:(NSDictionary *)contextParams {
++ (NSDictionary *)initContextInternal:(double)contextId withContextParams:(NSDictionary *)contextParams {
     NSNumber *contextIdNumber = [NSNumber numberWithDouble:contextId];
     if (llamaContexts[contextIdNumber] != nil) {
         @throw [NSException exceptionWithName:@"llama_error" reason:@"Context already exists" userInfo:nil];
@@ -65,6 +65,18 @@ static dispatch_queue_t llamaDQueue;
         @"reasonNoGPU": [context reasonNoMetal],
         @"model": [context modelInfo],
     };
+}
+
++ (NSDictionary *)initContext:(double)contextId withContextParams:(NSDictionary *)contextParams error:(NSError **)error {
+    @try {
+        return [self initContextInternal:contextId withContextParams:contextParams];
+    } @catch (NSException *exception) {
+        if (error != NULL) {
+            NSDictionary *userInfo = @{ NSLocalizedDescriptionKey: exception.reason ?: @"Unknown error" };
+            *error = [NSError errorWithDomain:@"CAPLlamaErrorDomain" code:1 userInfo:userInfo];
+        }
+        return nil;
+    }
 }
 
 + (NSDictionary *)getFormattedChat:(double)contextId withMessages:(NSString *)messages withTemplate:(NSString *)chatTemplate withParams:(NSDictionary *)params {
