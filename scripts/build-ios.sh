@@ -8,11 +8,19 @@ fi
 function cp_headers() {
   mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers
   cp ../cpp/*.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
-  cp ../cpp/*.hpp ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
 
   mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/minja
   cp ../cpp/minja/*.hpp ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/minja/
-  sed -i '' 's/<json.hpp>/"..\/json.hpp"/g' ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/minja/*.hpp
+  
+  mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/nlohmann/
+  cp ../cpp/nlohmann/*.hpp ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/nlohmann/
+
+  # Copy necessary common headers to Headers root (for includes without path prefix)
+  cp ../cpp/common/chat.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
+  cp ../cpp/common/common.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
+  cp ../cpp/common/sampling.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
+  cp ../cpp/common/json-schema-to-grammar.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
+  cp ../cpp/common/peg-parser.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
 }
 
 function build_framework() {
@@ -74,7 +82,7 @@ mkdir -p build-tvos
 # Build tvOS frameworks
 build_framework "tvOS" "arm64;x86_64" "appletvsimulator" "tvos-arm64_x86_64-simulator" "build-tvos"
 build_framework "tvOS" "arm64" "appletvos" "tvos-arm64" "build-tvos"
-rm -rf build-tvos
+# rm -rf build-tvos
 
 t1=$(date +%s)
 echo "Total time: $((t1 - t0)) seconds"

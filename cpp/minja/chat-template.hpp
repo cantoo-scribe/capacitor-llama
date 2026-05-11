@@ -9,9 +9,20 @@
 #pragma once
 
 #include "minja.hpp"
-#include <json.hpp>
+
+#include <chrono>
+#include <cstddef>
+#include <cstdio>
+#include <ctime>
+#include <exception>
+#include <iomanip>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "../nlohmann/json.hpp"
 
 using json = nlohmann::ordered_json;
 
@@ -151,10 +162,22 @@ class chat_template {
         }), false);
         caps_.supports_tools = contains(out, "some_tool");
 
+        const auto render_with_content = [&](const json & content) {
+            const json assistant_msg {{"role", "assistant"}, {"content", content}};
+            // Render two assistant messages as some templates like QwQ-32B are handling
+            // the content differently depending on whether it's the last message or not
+            // (to remove the <think> tag in all but the last message).
+            return try_raw_render(json::array({dummy_user_msg, assistant_msg, dummy_user_msg, assistant_msg}), {}, false);
+        };
+        auto out_empty = render_with_content("");
+        auto out_null = render_with_content(json());
+        caps_.requires_non_null_content = contains(out_empty, user_needle) && !contains(out_null, user_needle);
+
+        json j_null;
         auto make_tool_calls_msg = [&](const json & tool_calls) {
             return json {
                 {"role", "assistant"},
-                {"content", nullptr},
+                {"content", caps_.requires_non_null_content? "" : j_null},
                 {"tool_calls", tool_calls},
             };
         };
@@ -169,24 +192,28 @@ class chat_template {
             };
         };
         const json dummy_args_obj {{"argument_needle", "print('Hello, World!')"}};
+        const auto contains_arg_needle = [&](const std::string & out_str) {
+            return contains(out_str, "<parameter=argument_needle>")
+                || contains(out_str, "\"argument_needle\":")
+                || contains(out_str, "'argument_needle':")
+                || contains(out_str, ">argument_needle<")
+                || contains(out_str, "<parameter name=\"argument_needle\">");
+        };
 
         // Note: the arguments are rendered in both cases, but may be double-escaped, which we don't want.
         out = try_raw_render(json::array({
             dummy_user_msg,
             make_tool_calls_msg(json::array({make_tool_call("ipython", dummy_args_obj.dump())})),
         }), {}, false);
-        auto tool_call_renders_str_arguments = contains(out, "\"argument_needle\":") || contains(out, "'argument_needle':");
+        auto tool_call_renders_str_arguments = contains_arg_needle(out);
         out = try_raw_render(json::array({
             dummy_user_msg,
             make_tool_calls_msg(json::array({make_tool_call("ipython", dummy_args_obj)})),
         }), {}, false);
-        auto tool_call_renders_obj_arguments = contains(out, "\"argument_needle\":") || contains(out, "'argument_needle':");
+        auto tool_call_renders_obj_arguments = contains_arg_needle(out);
 
         caps_.supports_tool_calls = tool_call_renders_str_arguments || tool_call_renders_obj_arguments;
         caps_.requires_object_arguments = !tool_call_renders_str_arguments && tool_call_renders_obj_arguments;
-        auto out_empty = try_raw_render(json::array({dummy_user_msg, {{"role", "assistant"}, {"content", ""}}}), {}, false);
-        auto out_null = try_raw_render(json::array({dummy_user_msg, {{"role", "assistant"}, {"content", nullptr}}}), {}, false);
-        caps_.requires_non_null_content = contains(out_empty, user_needle) && !contains(out_null, user_needle);
 
         if (caps_.supports_tool_calls) {
             auto dummy_args = caps_.requires_object_arguments ? dummy_args_obj : json(dummy_args_obj.dump());
@@ -223,7 +250,7 @@ class chat_template {
                 };
                 const json tool_call_msg {
                     {"role", "assistant"},
-                    {"content", nullptr},
+                    {"content", caps_.requires_non_null_content ? "" : j_null},
                     {"tool_calls", json::array({
                         {
                             // TODO: detect if requires numerical id or fixed length == 6 like Nemo
@@ -384,8 +411,8 @@ class chat_template {
 
             for (const auto & message_ : adjusted_messages) {
                 auto message = message_;
-                if (!message.contains("role") || !message.contains("content")) {
-                    throw std::runtime_error("message must have 'role' and 'content' fields: " + message.dump());
+                if (!message.contains("role") || (!message.contains("content") && !message.contains("tool_calls"))) {
+                    throw std::runtime_error("message must have 'role' and one of 'content' or 'tool_calls' fields: " + message.dump());
                 }
                 std::string role = message.at("role");
 
@@ -406,7 +433,6 @@ class chat_template {
                         }
                     }
                     if (polyfill_tool_calls) {
-                        auto content = message.at("content");
                         auto tool_calls = json::array();
                         for (const auto & tool_call : message.at("tool_calls")) {
                             if (tool_call.at("type") != "function") {
@@ -425,8 +451,11 @@ class chat_template {
                         auto obj = json {
                             {"tool_calls", tool_calls},
                         };
-                        if (!content.is_null() && content != "") {
-                            obj["content"] = content;
+                        if (message.contains("content")) {
+                            auto content = message.at("content");
+                            if (!content.is_null() && !content.empty()) {
+                                obj["content"] = content;
+                            }
                         }
                         message["content"] = obj.dump(2);
                         message.erase("tool_calls");
@@ -435,13 +464,12 @@ class chat_template {
                 if (polyfill_tool_responses && role == "tool") {
                     message["role"] = "user";
                     auto obj = json {
-                        {"tool_response", {
-                            {"content", message.at("content")},
-                        }},
+                        {"tool_response", json::object()},
                     };
                     if (message.contains("name")) {
-                        obj["tool_response"]["name"] = message.at("name");
+                        obj["tool_response"]["tool"] = message.at("name");
                     }
+                    obj["tool_response"]["content"] = message.at("content");
                     if (message.contains("tool_call_id")) {
                         obj["tool_response"]["tool_call_id"] = message.at("tool_call_id");
                     }
@@ -510,7 +538,7 @@ class chat_template {
     static nlohmann::ordered_json add_system(const nlohmann::ordered_json & messages, const std::string & system_prompt) {
         json messages_with_system = messages;
 
-        if (messages_with_system.size() > 0 && messages_with_system[0].at("role") == "system") {
+        if (!messages_with_system.empty() && messages_with_system[0].at("role") == "system") {
             std::string existing_system = messages_with_system.at(0).at("content");
             messages_with_system[0] = json {
                 {"role", "system"},

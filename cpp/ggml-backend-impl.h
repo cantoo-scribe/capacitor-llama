@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-    #define LM_GGML_BACKEND_API_VERSION 1
+    #define LM_GGML_BACKEND_API_VERSION 2
 
     //
     // Backend buffer type
@@ -114,6 +114,9 @@ extern "C" {
         void (*event_record)(lm_ggml_backend_t backend, lm_ggml_backend_event_t event);
         // wait for an event on on a different stream
         void (*event_wait)  (lm_ggml_backend_t backend, lm_ggml_backend_event_t event);
+
+        // (optional) sort/optimize the nodes in the graph
+        void                      (*graph_optimize)    (lm_ggml_backend_t backend, struct lm_ggml_cgraph * cgraph);
     };
 
     struct lm_ggml_backend {
@@ -205,9 +208,6 @@ extern "C" {
         struct lm_ggml_backend_reg_i iface;
         void * context;
     };
-
-    // Internal backend registry API
-    LM_GGML_API void lm_ggml_backend_register(lm_ggml_backend_reg_t reg);
 
     // Add backend dynamic loading support to the backend
 

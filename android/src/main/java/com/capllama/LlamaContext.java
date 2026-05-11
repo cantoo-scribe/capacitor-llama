@@ -49,6 +49,10 @@ public class LlamaContext {
     private long context;
     private JSObject modelDetails;
     private int jobId = -1;
+    private boolean gpuEnabled;
+    private String reasonNoGPU = "";
+    private String systemInfo = "";
+    private JSArray devices = null;
 
     // private DeviceEventManagerModule.RCTDeviceEventEmitter eventEmitter;
 
@@ -62,60 +66,58 @@ public class LlamaContext {
         // eventEmitter = reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class);
         this.id = id;
 
-        this.context = initContext(
-            // String model,
-            params.getString("model"),
-            // String chat_template,
-            params.getString("chat_template", ""),
-            // String reasoning_format,
-            params.getString("reasoning_format", "none"),
-            // boolean embedding,
-            params.getBoolean("embedding", false),
-            // int embd_normalize,
-            params.getInteger("embd_normalize", -1),
-            // int n_ctx,
-            params.getInteger("n_ctx", 512),
-            // int n_batch,
-            params.getInteger("n_batch", 512),
-            // int n_ubatch,
-            params.getInteger("n_ubatch", 512),
-            // int n_threads,
-            params.getInteger("n_threads", 0),
-            // int n_gpu_layers, // TODO: Support this
-            params.getInteger("n_gpu_layers", 0),
-            // boolean flash_attn,
-            params.getBoolean("flash_attn", false),
-            // String cache_type_k,
-            params.getString("cache_type_k", "f16"),
-            // String cache_type_v,
-            params.getString("cache_type_v", "f16"),
-            // boolean use_mlock,
-            params.getBoolean("use_mlock", true),
-            // boolean use_mmap,
-            params.getBoolean("use_mmap", true),
-            //boolean vocab_only,
-            params.getBoolean("vocab_only", false),
-            // String lora,
-            params.getString("lora", ""),
-            // float lora_scaled,
-            (float) params.optDouble("lora_scaled", 1.0f),
-            // ReadableArray lora_adapters,
-            // params.getArray("lora_list", null),
-            null,
-            // float rope_freq_base,
-            (float) params.optDouble("rope_freq_base", 0.0f),
-            // float rope_freq_scale
-            (float) params.optDouble("rope_freq_scale", 0.0f),
-            // int pooling_type,
-            params.getInteger("pooling_type", -1),
-            // LoadProgressCallback load_progress_callback
-            // params.hasKey("use_progress_callback") ? new LoadProgressCallback(this) : null
-            null
-        );
-        if (this.context == -1) {
-            throw new IllegalStateException("Failed to initialize context");
-        }
-        this.modelDetails = loadModelDetails(this.context);
+       JSObject initResult = initContext(
+           params,
+           // LoadProgressCallback load_progress_callback
+           // params.hasKey("use_progress_callback") ? new LoadProgressCallback(this) : null
+           null
+       );
+
+       if (initResult == null) {
+           throw new IllegalStateException("Failed to initialize context");
+       }
+       if (initResult.has("_error")) {
+           throw new IllegalStateException(initResult.getString("_error"));
+       }
+       if (!initResult.has("context")) {
+           throw new IllegalStateException("Failed to initialize context");
+       }
+       String contextPtr = initResult.getString("context");
+       if (contextPtr == null || contextPtr.isEmpty()) {
+           throw new IllegalStateException("Failed to initialize context");
+       }
+       try {
+           this.context = Long.parseLong(contextPtr);
+       } catch (NumberFormatException numberFormatException) {
+           throw new IllegalStateException("Invalid native context pointer", numberFormatException);
+       }
+       if (this.context == 0) {
+           throw new IllegalStateException("Failed to initialize context");
+       }
+
+       this.gpuEnabled = initResult.has("gpu") && initResult.getBoolean("gpu", false);
+       this.reasonNoGPU = initResult.has("reasonNoGPU") ? initResult.getString("reasonNoGPU") : "";
+       if (this.reasonNoGPU == null) {
+           this.reasonNoGPU = "";
+       }
+       if (!this.gpuEnabled && params.has("no_gpu_devices") && params.getBoolean("no_gpu_devices", false)) {
+           this.reasonNoGPU = "GPU devices disabled by user";
+       }
+       if (initResult.has("devices")) {
+           try {
+               this.devices = JSArray.from(initResult.getJSONArray("devices"));
+           } catch (JSONException ignored) {
+           }
+       }
+       this.systemInfo = initResult.has("systemInfo") ? initResult.getString("systemInfo") : "";
+       if (this.systemInfo == null) {
+           this.systemInfo = "";
+       }
+
+       if (this.context == -1) {
+           throw new IllegalStateException("Failed to initialize context");
+       }
+       this.modelDetails = loadModelDetails(this.context);
     }
 
     public void interruptLoad() {
@@ -135,18 +137,11 @@ public class LlamaContext {
     }
 
     public JSObject getFormattedChatWithJinja(String messages, String chatTemplate, JSObject params) {
-        String jsonSchema = params.getString("json_schema", "");
-        String tools = params.getString("tools", "");
-        Boolean parallelToolCalls = params.getBoolean("parallel_tool_calls", false);
-        String toolChoice = params.getString("tool_choice", "");
         return getFormattedChatWithJinja(
             this.context,
             messages,
             chatTemplate == null ? "" : chatTemplate,
-            jsonSchema,
-            tools,
-            parallelToolCalls,
-            toolChoice
+            params
         );
     }
 
@@ -207,125 +202,15 @@ public class LlamaContext {
         if (!params.has("prompt")) {
             throw new IllegalArgumentException("Missing required parameter: prompt");
         }
-        String[] stop = new String[0];
-        String[] dry_sequence_breakers = new String[] { "\n", ":", "\"", "*" };
-        double[][] logit_bias = new double[0][0];
-        try {
-            if (params.has("logit_bias")) {
-                JSONArray logit_bias_array = params.getJSONArray("logit_bias");
-                logit_bias = new double[logit_bias_array.length()][];
-                for (int i = 0; i < logit_bias_array.length(); i++) {
-                    JSONArray logit_bias_row = logit_bias_array.getJSONArray(i);
-                    logit_bias[i] = new double[logit_bias_row.length()];
-                    for (int j = 0; j < logit_bias_row.length(); j++) {
-                        if (logit_bias_row.get(j) instanceof Integer) {
-                            logit_bias[i][j] = logit_bias_row.getInt(j);
-                        } else if (logit_bias_row.get(j) instanceof Double) {
-                            logit_bias[i][j] = logit_bias_row.getDouble(j);
-                        } else if (logit_bias_row.get(j) instanceof Boolean && !logit_bias_row.getBoolean(j)) {
-                            logit_bias[i][j] = Double.NEGATIVE_INFINITY;
-                        }
-                    }
-                }
-            }
-
-            if (params.has("stop")) {
-                JSONArray jsArr = params.getJSONArray("stop");
-                stop = new String[jsArr.length()];
-                for (int i = 0; i < jsArr.length(); i++) {
-                    stop[i] = jsArr.getString(i);
-                }
-            }
-
-            if (params.has("dry_sequence_breakers")) {
-                JSONArray jsArr = params.getJSONArray("dry_sequence_breakers");
-                dry_sequence_breakers = new String[jsArr.length()];
-                for (int i = 0; i < jsArr.length(); i++) {
-                    dry_sequence_breakers[i] = jsArr.getString(i);
-                }
-            }
-
-            JSObject result = doCompletion(
-                this.context,
-                // String prompt,
-                params.getString("prompt"),
-                // int chat_format,
-                params.getInteger("chat_format", 0),
-                // String grammar,
-                params.getString("grammar", ""),
-                // String json_schema,
-                params.getString("json_schema", ""),
-                // boolean grammar_lazy,
-                params.getBoolean("grammar_lazy", false),
-                // ReadableArray grammar_triggers,
-                //       params.hasKey("grammar_triggers") ? params.getArray("grammar_triggers") : null,
-                null,
-                // ReadableArray preserved_tokens,
-                //       params.hasKey("preserved_tokens") ? params.getArray("preserved_tokens") : null,
-                null,
-                // float temperature,
-                (float) params.optDouble("temperature", 0.7f),
-                // int n_threads,
-                params.getInteger("n_threads", 0),
-                // int n_predict,
-                params.getInteger("n_predict", -1),
-                // int n_probs,
-                params.getInteger("n_probs", 0),
-                // int penalty_last_n,
-                params.getInteger("penalty_last_n", 64),
-                // float penalty_repeat,
-                (float) params.optDouble("penalty_repeat", 1.00f),
-                // float penalty_freq,
-                (float) params.optDouble("penalty_freq", 0.00f),
-                // float penalty_present,
-                (float) params.optDouble("penalty_present", 0.00f),
-                // float mirostat,
-                (float) params.optDouble("mirostat", 0.00f),
-                // float mirostat_tau,
-                (float) params.optDouble("mirostat_tau", 5.00f),
-                // float mirostat_eta,
-                (float) params.optDouble("mirostat_eta", 0.10f),
-                // int top_k,
-                params.getInteger("top_k", 40),
-                // float top_p,
-                (float) params.optDouble("top_p", 0.95f),
-                // float min_p,
-                (float) params.optDouble("min_p", 0.05f),
-                // float xtc_threshold,
-                (float) params.optDouble("xtc_threshold", 0.00f),
-                // float xtc_probability,
-                (float) params.optDouble("xtc_probability", 0.00f),
-                // float typical_p,
-                (float) params.optDouble("typical_p", 1.00f),
-                // int seed,
-                params.getInteger("seed", -1),
-                // String[] stop,
-                stop,
-                // boolean ignore_eos,
-                params.getBoolean("ignore_eos", false),
-                // double[][] logit_bias,
-                logit_bias,
-                // float dry_multiplier,
-                (float) params.optDouble("dry_multiplier", 0.00f),
-                // float dry_base,
-                (float) params.optDouble("dry_base", 1.75f),
-                // int dry_allowed_length,
-                params.getInteger("dry_allowed_length", 2),
-                // int dry_penalty_last_n,
-                params.getInteger("dry_penalty_last_n", -1),
-                // float top_n_sigma,
-                (float) params.optDouble("top_n_sigma", -1.0f),
-                // String[] dry_sequence_breakers, when undef, we use the default definition from common.h
-                dry_sequence_breakers,
-                callback
-            );
-            if (result.has("error")) {
-                throw new IllegalStateException(result.getString("error"));
-            }
-            return result;
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
+        JSObject result = doCompletion(
+            this.context,
+            params,
+            callback
+        );
+        if (result.has("error")) {
+            throw new IllegalStateException(result.getString("error"));
         }
+        return result;
     }
 
     public void stopCompletion() {
@@ -338,7 +223,7 @@ public class LlamaContext {
 
     public JSObject tokenize(String text) {
         JSObject result = new JSObject();
-        result.put("tokens", tokenize(this.context, text));
+        result.put("tokens", tokenize(this.context, text, new String[0]));
         return result;
     }
 
@@ -443,18 +328,18 @@ public class LlamaContext {
             //     loadedLibrary = "capllama_v8";
             // }
             if (hasFp16 && isAtLeastArmV84) {
-                Log.d(NAME, "Loading libcapllama_v8_7.so with runtime feature detection");
-                System.loadLibrary("capllama_v8_7");
-                loadedLibrary = "capllama_v8_7";
+                Log.d(NAME, "Loading libcapllama_v8_2_dotprod_i8mm.so with runtime feature detection");
+                System.loadLibrary("capllama_jni_v8_2_dotprod_i8mm");
+                loadedLibrary = "capllama_jni_v8_2_dotprod_i8mm";
             } else {
                 Log.d(NAME, "Loading default libcapllama_v8.so");
-                System.loadLibrary("capllama_v8");
-                loadedLibrary = "capllama_v8";
+                System.loadLibrary("capllama_jni_v8");
+                loadedLibrary = "capllama_jni_v8";
             }
         } else if (LlamaContext.isX86_64()) {
             Log.d(NAME, "Loading libcapllama_x86_64.so");
-            System.loadLibrary("capllama_x86_64");
-            loadedLibrary = "capllama_x86_64";
+            System.loadLibrary("capllama_jni_x86_64");
+            loadedLibrary = "capllama_jni_x86_64";
         } else {
             Log.d(NAME, "ARM32 is not supported, skipping loading library");
         }
@@ -496,33 +381,7 @@ public class LlamaContext {
     //   String model,
     //   String[] skip
     // );
-    protected static native long initContext(
-        String model,
-        String chat_template,
-        String reasoning_format,
-        boolean embedding,
-        int embd_normalize,
-        int n_ctx,
-        int n_batch,
-        int n_ubatch,
-        int n_threads,
-        int n_gpu_layers, // TODO: Support this
-        boolean flash_attn,
-        String cache_type_k,
-        String cache_type_v,
-        boolean use_mlock,
-        boolean use_mmap,
-        boolean vocab_only,
-        String lora,
-        float lora_scaled,
-        // TODO: this type is wrong
-        // ReadableArray lora_list,
-        int[] lora_list,
-        float rope_freq_base,
-        float rope_freq_scale,
-        int pooling_type,
-        LoadProgressCallback load_progress_callback
-    );
+    protected static native JSObject initContext(JSObject params, LoadProgressCallback loadProgressCallback);
 
     protected static native void interruptLoad(long contextPtr);
 
@@ -532,10 +391,7 @@ public class LlamaContext {
         long contextPtr,
         String messages,
         String chatTemplate,
-        String jsonSchema,
-        String tools,
-        boolean parallelToolCalls,
-        String toolChoice
+        JSObject params
     );
 
     protected static native String getFormattedChat(long contextPtr, String messages, String chatTemplate);
@@ -551,47 +407,14 @@ public class LlamaContext {
     // );
     protected static native JSObject doCompletion(
         long context_ptr,
-        String prompt,
-        int chat_format,
-        String grammar,
-        String json_schema,
-        boolean grammar_lazy,
-        JSArray grammar_triggers,
-        JSArray preserved_tokens,
-        float temperature,
-        int n_threads,
-        int n_predict,
-        int n_probs,
-        int penalty_last_n,
-        float penalty_repeat,
-        float penalty_freq,
-        float penalty_present,
-        float mirostat,
-        float mirostat_tau,
-        float mirostat_eta,
-        int top_k,
-        float top_p,
-        float min_p,
-        float xtc_threshold,
-        float xtc_probability,
-        float typical_p,
-        int seed,
-        String[] stop,
-        boolean ignore_eos,
-        double[][] logit_bias,
-        float dry_multiplier,
-        float dry_base,
-        int dry_allowed_length,
-        int dry_penalty_last_n,
-        float top_n_sigma,
-        String[] dry_sequence_breakers,
+        JSObject params,
         PartialCompletionCallback partial_completion_callback
     );
 
     protected static native void stopCompletion(long contextPtr);
 
     // protected static native boolean isPredicting(long contextPtr);
-    protected static native JSArray tokenize(long contextPtr, String text);
+    protected static native JSArray tokenize(long contextPtr, String text, String[] media_paths);
 
     protected static native String detokenize(long contextPtr, int[] tokens);
 

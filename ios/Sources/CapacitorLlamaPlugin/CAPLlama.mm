@@ -5,6 +5,12 @@
 #import "RNLlamaSpec.h"
 #endif
 
+#if RNLLAMA_BUILD_FROM_SOURCE
+#import "json.hpp"
+#else
+#import <capllama/nlohmann/json.hpp>
+#endif
+
 @implementation CAPLlama
 
 static NSMutableDictionary *llamaContexts;
@@ -60,11 +66,16 @@ static dispatch_queue_t llamaDQueue;
 
     [llamaContexts setObject:context forKey:contextIdNumber];
 
-    return @{
+    NSMutableDictionary *result = [@{
         @"gpu": @([context isMetalEnabled]),
         @"reasonNoGPU": [context reasonNoMetal],
         @"model": [context modelInfo],
-    };
+        @"systemInfo": [context systemInfo],
+    } mutableCopy];
+
+    result[@"devices"] = [context usedDevices];;
+
+    return result;
 }
 
 + (NSDictionary *)initContext:(double)contextId withContextParams:(NSDictionary *)contextParams error:(NSError **)error {

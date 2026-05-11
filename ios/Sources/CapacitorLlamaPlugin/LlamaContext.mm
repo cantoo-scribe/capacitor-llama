@@ -3,6 +3,37 @@
 
 @implementation LlamaContext
 
++ (BOOL)isGpuAvailable:(NSDictionary *)params {
+    BOOL skipGpuDevices = params[@"no_gpu_devices"] && [params[@"no_gpu_devices"] boolValue];
+
+    if (skipGpuDevices) {
+        return false;
+    }
+
+#ifdef LM_GGML_USE_METAL
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+
+    // Check ggml-metal availability
+    BOOL supportsGgmlMetal = [device supportsFamily:MTLGPUFamilyApple7];
+    if (@available(iOS 16.0, tvOS 16.0, *)) {
+        supportsGgmlMetal = supportsGgmlMetal && [device supportsFamily:MTLGPUFamilyMetal3];
+    }
+
+#if TARGET_OS_SIMULATOR
+    // GPU acceleration not fully supported on simulator
+    device = nil;
+    return false;
+#else
+    device = nil;
+    return supportsGgmlMetal;
+#endif
+
+#else
+    // Metal is not enabled in this build
+    return false;
+#endif
+}
+
 + (void)toggleNativeLog:(BOOL)enabled onEmitLog:(void (^)(NSString *level, NSString *text))onEmitLog {
   if (enabled) {
       void (^copiedBlock)(NSString *, NSString *) = [onEmitLog copy];
@@ -69,6 +100,11 @@
     return info;
 }
 
++ (NSString *)getBackendDevicesInfo {
+    std::string devices_info_json = rnllama::get_backend_devices_info();
+    return [NSString stringWithUTF8String:devices_info_json.c_str()];
+}
+
 + (instancetype)initWithParams:(NSDictionary *)params onProgress:(void (^)(unsigned int progress))onProgress {
     // llama_backend_init(false);
     common_params defaultParams;
@@ -82,7 +118,7 @@
     BOOL isAsset = [params[@"is_model_asset"] boolValue];
     NSString *path = modelPath;
     if (isAsset) path = [[NSBundle mainBundle] pathForResource:modelPath ofType:nil];
-    defaultParams.model = [path UTF8String];
+    defaultParams.model.path = [path UTF8String];
 
     NSString *chatTemplate = params[@"chat_template"];
     if (chatTemplate) {
@@ -90,66 +126,71 @@
         NSLog(@"chatTemplate: %@", chatTemplate);
     }
 
-    NSString *reasoningFormat = params[@"reasoning_format"];
-    if (reasoningFormat && [reasoningFormat isEqualToString:@"deepseek"]) {
-        defaultParams.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
-    } else {
-        defaultParams.reasoning_format = COMMON_REASONING_FORMAT_NONE;
-    }
-
     if (params[@"n_ctx"]) defaultParams.n_ctx = [params[@"n_ctx"] intValue];
     if (params[@"use_mlock"]) defaultParams.use_mlock = [params[@"use_mlock"]boolValue];
 
-    BOOL skipGpuDevices = params[@"no_gpu_devices"] && [params[@"no_gpu_devices"] boolValue];
+    if (params[@"devices"]) {
+        std::vector<lm_ggml_backend_dev_t> devs;
+        for (size_t i = 0; i < lm_ggml_backend_dev_count(); ++i) {
+            lm_ggml_backend_dev_t dev = lm_ggml_backend_dev_get(i);
+            const char *dev_name = lm_ggml_backend_dev_name(dev);
+
+            if ([params[@"devices"] containsObject:[NSString stringWithUTF8String:dev_name]]) {
+                switch (lm_ggml_backend_dev_type(dev)) {
+                    case LM_GGML_BACKEND_DEVICE_TYPE_CPU:
+#ifndef TARGET_OS_SIMULATOR
+                    case LM_GGML_BACKEND_DEVICE_TYPE_ACCEL:
+#endif
+                    case LM_GGML_BACKEND_DEVICE_TYPE_GPU:
+                        devs.push_back(dev);
+                        break;
+                }
+            }
+        }
+        if (!devs.empty()) {
+            defaultParams.devices = devs;
+            defaultParams.devices.push_back(nullptr);
+        }
+    }
+
+    BOOL isGpuAvailable = [self isGpuAvailable:params];
 
     BOOL isMetalEnabled = false;
     NSString *reasonNoMetal = @"";
     defaultParams.n_gpu_layers = 0;
-#ifdef LM_GGML_USE_METAL
-    // Check ggml-metal availability
-    NSError * error = nil;
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    id<MTLLibrary> library = [device
-        newLibraryWithSource:@"#include <metal_stdlib>\n"
-                                "using namespace metal;"
-                                "typedef matrix<bfloat, 4, 4> bfloat4x4;"
-                                "kernel void test() { simd_sum(0); }"
-        options:nil
-        error:&error
-    ];
-    if (error) {
-        reasonNoMetal = [error localizedDescription];
-        skipGpuDevices = true;
-    } else {
-        id<MTLFunction> kernel = [library newFunctionWithName:@"test"];
-        id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:kernel error:&error];
-        if (pipeline == nil) {
-            reasonNoMetal = [error localizedDescription];
-            skipGpuDevices = true;
-        } else {
+
+    if (isGpuAvailable) {
 #if TARGET_OS_SIMULATOR
-            // Use the backend, but no layers because not supported fully on simulator
-            defaultParams.n_gpu_layers = 0;
-            isMetalEnabled = true;
+        // Use the backend, but no layers because not supported fully on simulator
+        defaultParams.n_gpu_layers = 0;
+        isMetalEnabled = true;
 #else
-            defaultParams.n_gpu_layers = [params[@"n_gpu_layers"] intValue];
-            isMetalEnabled = true;
+        defaultParams.n_gpu_layers = [params[@"n_gpu_layers"] intValue];
+        isMetalEnabled = true;
+#endif
+    } else {
+        if (params[@"no_gpu_devices"] && [params[@"no_gpu_devices"] boolValue]) {
+            reasonNoMetal = @"GPU devices disabled by user";
+        } else {
+#ifdef LM_GGML_USE_METAL
+            reasonNoMetal = @"Metal is not supported in this device";
+#else
+            reasonNoMetal = @"Metal is not enabled in this build";
 #endif
         }
+        isMetalEnabled = false;
     }
-    device = nil;
-#else
-    reasonNoMetal = @"Metal is not enabled in this build";
-    isMetalEnabled = false;
-#endif
 
+    BOOL skipGpuDevices = !isGpuAvailable || (params[@"no_gpu_devices"] && [params[@"no_gpu_devices"] boolValue]); // Deprecated in favor of `devices`
     if (skipGpuDevices) {
         std::vector<lm_ggml_backend_dev_t> cpu_devs;
         for (size_t i = 0; i < lm_ggml_backend_dev_count(); ++i) {
             lm_ggml_backend_dev_t dev = lm_ggml_backend_dev_get(i);
             switch (lm_ggml_backend_dev_type(dev)) {
                 case LM_GGML_BACKEND_DEVICE_TYPE_CPU:
+#ifndef TARGET_OS_SIMULATOR
                 case LM_GGML_BACKEND_DEVICE_TYPE_ACCEL:
+#endif
                     cpu_devs.push_back(dev);
                     break;
                 case LM_GGML_BACKEND_DEVICE_TYPE_GPU:
@@ -158,11 +199,14 @@
         }
         if (cpu_devs.size() > 0) {
             defaultParams.devices = cpu_devs;
+            defaultParams.n_gpu_layers = 0;
+            isMetalEnabled = false;
         }
     }
 
     if (params[@"n_batch"]) defaultParams.n_batch = [params[@"n_batch"] intValue];
     if (params[@"n_ubatch"]) defaultParams.n_ubatch = [params[@"n_ubatch"] intValue];
+    if (params[@"n_parallel"]) defaultParams.n_parallel = [params[@"n_parallel"] intValue];
     if (params[@"use_mmap"]) defaultParams.use_mmap = [params[@"use_mmap"] boolValue];
 
     if (params[@"pooling_type"] && [params[@"pooling_type"] isKindOfClass:[NSNumber class]]) {
@@ -182,16 +226,72 @@
     if (params[@"rope_freq_base"]) defaultParams.rope_freq_base = [params[@"rope_freq_base"] floatValue];
     if (params[@"rope_freq_scale"]) defaultParams.rope_freq_scale = [params[@"rope_freq_scale"] floatValue];
 
-    if (params[@"flash_attn"] && [params[@"flash_attn"] boolValue]) defaultParams.flash_attn = true;
+    if (params[@"flash_attn_type"] && [params[@"flash_attn_type"] isKindOfClass:[NSString class]]) {
+      const char* flash_attn_type_str = [params[@"flash_attn_type"] UTF8String];
+      if (flash_attn_type_str) {
+        defaultParams.flash_attn_type = static_cast<enum llama_flash_attn_type>(rnllama::flash_attn_type_from_str(flash_attn_type_str));
+      }
+    } else {
+      // DEPRECATED: use flash_attn_type instead
+      if (params[@"flash_attn"]) {
+        defaultParams.flash_attn_type = [params[@"flash_attn"] boolValue] ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+      }
+    }
 
-    if (params[@"cache_type_k"]) defaultParams.cache_type_k = rnllama::kv_cache_type_from_str([params[@"cache_type_k"] UTF8String]);
-    if (params[@"cache_type_v"]) defaultParams.cache_type_v = rnllama::kv_cache_type_from_str([params[@"cache_type_v"] UTF8String]);
+    if (params[@"ctx_shift"]) defaultParams.ctx_shift = [params[@"ctx_shift"] boolValue];
+
+    if (params[@"kv_unified"]) defaultParams.kv_unified = [params[@"kv_unified"] boolValue];
+    
+    if (params[@"swa_full"]) defaultParams.swa_full = [params[@"swa_full"] boolValue];
+
+    // Handle n_cpu_moe parameter
+    if (params[@"n_cpu_moe"] && [params[@"n_cpu_moe"] isKindOfClass:[NSNumber class]]) {
+        int nCpuMoe = [params[@"n_cpu_moe"] intValue];
+        if (nCpuMoe > 0) {
+            for (int i = 0; i < nCpuMoe; ++i) {
+                static std::list<std::string> buft_overrides;
+                std::string pattern = "blk\\." + std::to_string(i) + "\\.ffn_(up|down|gate)_exps";
+                buft_overrides.push_back(pattern);
+                defaultParams.tensor_buft_overrides.push_back({buft_overrides.back().c_str(), lm_ggml_backend_cpu_buffer_type()});
+            }
+            defaultParams.tensor_buft_overrides.push_back({nullptr, nullptr});
+        }
+    }
+    
+    if (params[@"cache_type_k"] && [params[@"cache_type_k"] isKindOfClass:[NSString class]]) {
+        const char* cache_type_k_str = [params[@"cache_type_k"] UTF8String];
+        if (cache_type_k_str) {
+            defaultParams.cache_type_k = rnllama::kv_cache_type_from_str(cache_type_k_str);
+        }
+    }
+    if (params[@"cache_type_v"] && [params[@"cache_type_v"] isKindOfClass:[NSString class]]) {
+        const char* cache_type_v_str = [params[@"cache_type_v"] UTF8String];
+        if (cache_type_v_str) {
+            defaultParams.cache_type_v = rnllama::kv_cache_type_from_str(cache_type_v_str);
+        }
+    }
 
     int nThreads = params[@"n_threads"] ? [params[@"n_threads"] intValue] : 0;
     const int maxThreads = (int) [[NSProcessInfo processInfo] processorCount];
     // Use 2 threads by default on 4-core devices, 4 threads on more cores
     const int defaultNThreads = nThreads == 4 ? 2 : MIN(4, maxThreads);
     defaultParams.cpuparams.n_threads = nThreads > 0 ? nThreads : defaultNThreads;
+
+    // Handle cpu_mask and cpu_strict parameters
+    if (params[@"cpu_mask"] && [params[@"cpu_mask"] isKindOfClass:[NSString class]]) {
+        NSString *cpuMask = params[@"cpu_mask"];
+        const char *cpuMaskStr = [cpuMask UTF8String];
+        if (cpuMaskStr && cpuMaskStr[0] != '\0') {
+            bool cpumask[LM_GGML_MAX_N_THREADS] = {false};
+            if (parse_cpu_mask(cpuMaskStr, cpumask)) {
+                std::copy(std::begin(cpumask), std::end(cpumask), std::begin(defaultParams.cpuparams.cpumask));
+                defaultParams.cpuparams.mask_valid = true;
+            }
+        }
+    }
+    if (params[@"cpu_strict"]) {
+        defaultParams.cpuparams.strict_cpu = [params[@"cpu_strict"] boolValue];
+    }
 
     LlamaContext *context = [[LlamaContext alloc] init];
     context->llama = new rnllama::llama_rn_context();
@@ -211,8 +311,21 @@
         };
         defaultParams.progress_callback_user_data = context;
     }
+    NSMutableArray *usedDevices = [NSMutableArray array];
     try {
         context->is_model_loaded = context->llama->loadModel(defaultParams);
+        if (context->is_model_loaded) {
+            context->llama->attachThreadpoolsIfAvailable();
+
+            const auto &model_devices = context->llama->llama_init.model->devices;
+            for (auto dev : model_devices) {
+                auto dev_type = lm_ggml_backend_dev_type(dev);
+                const char *used_name = lm_ggml_backend_dev_name(dev);
+                if (used_name != nullptr) {
+                    [usedDevices addObject:[NSString stringWithUTF8String:used_name]];
+                }
+            }
+        }
     } catch (const std::exception &e) {
         delete context->llama;
         @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
@@ -256,6 +369,8 @@
 
     context->is_metal_enabled = isMetalEnabled;
     context->reason_no_metal = reasonNoMetal;
+    context->used_devices = usedDevices;
+    context->system_info = [NSString stringWithUTF8String:common_params_get_system_info(defaultParams).c_str()];
 
     return context;
 }
@@ -272,6 +387,10 @@
     return reason_no_metal;
 }
 
+- (NSArray *)usedDevices {
+    return used_devices;
+}
+
 - (NSDictionary *)modelInfo {
     char desc[1024];
     llama_model_desc(llama->model, desc, sizeof(desc));
@@ -281,7 +400,7 @@
     for (int i = 0; i < count; i++) {
         char key[256];
         llama_model_meta_key_by_index(llama->model, i, key, sizeof(key));
-        char val[4096];
+        char val[16384];  // gpt-oss's chat template is 12kb
         llama_model_meta_val_str_by_index(llama->model, i, val, sizeof(val));
 
         NSString *keyStr = [NSString stringWithUTF8String:key];
@@ -335,12 +454,19 @@
     };
 }
 
+- (NSString *)systemInfo {
+    return system_info;
+}
+
 - (bool)isModelLoaded {
     return is_model_loaded;
 }
 
 - (bool)isPredicting {
-    return llama->is_predicting;
+    if (llama->completion == nullptr) {
+        return false;
+    }
+    return llama->completion->is_predicting;
 }
 
 - (NSDictionary *)getFormattedChatWithJinja:(NSString *)messages
@@ -349,6 +475,7 @@
     withTools:(NSString *)tools
     withParallelToolCalls:(BOOL)parallelToolCalls
     withToolChoice:(NSString *)toolChoice
+    withEnableThinking:(BOOL)enableThinking
 {
     auto tmpl_str = chatTemplate == nil ? "" : [chatTemplate UTF8String];
 
@@ -359,7 +486,8 @@
         jsonSchema == nil ? "" : [jsonSchema UTF8String],
         tools == nil ? "" : [tools UTF8String],
         parallelToolCalls,
-        toolChoice == nil ? "" : [toolChoice UTF8String]
+        toolChoice == nil ? "" : [toolChoice UTF8String],
+        enableThinking
     );
     result[@"prompt"] = [NSString stringWithUTF8String:chatParams.prompt.c_str()];
     result[@"chat_format"] = @(static_cast<int>(chatParams.format));
@@ -373,6 +501,7 @@
             @"token": @(trigger.token),
         }];
     }
+    result[@"thinking_forced_open"] = @(chatParams.thinking_forced_open);
     result[@"grammar_triggers"] = grammar_triggers;
     NSMutableArray *preserved_tokens = [[NSMutableArray alloc] init];
     for (const auto & token : chatParams.preserved_tokens) {
@@ -409,15 +538,19 @@
         NSMutableArray *probsForToken = [[NSMutableArray alloc] init];
         for (const auto &p : prob.probs)
         {
-            std::string text = rnllama::tokens_to_output_formatted_string(llama->ctx, p.tok);
+            std::string tokStr = rnllama::tokens_to_output_formatted_string(llama->ctx, p.tok);
+            NSString *tokStrString = [NSString stringWithUTF8String:tokStr.c_str()];
+            if (tokStrString == nil) tokStrString = @"<UNKNOWN>";
             [probsForToken addObject:@{
-                @"tok_str": [self sanitizeUtf8:text],
+                @"tok_str": tokStrString,
                 @"prob": [NSNumber numberWithDouble:p.prob]
             }];
         }
         std::string tokStr = rnllama::tokens_to_output_formatted_string(llama->ctx, prob.tok);
+        NSString *tokStrString = [NSString stringWithUTF8String:tokStr.c_str()];
+        if (tokStrString == nil) tokStrString = @"<UNKNOWN>";
         [out addObject:@{
-            @"content": [self sanitizeUtf8:tokStr],
+            @"content": tokStrString,
             @"probs": probsForToken
         }];
     }
@@ -427,7 +560,10 @@
 - (NSDictionary *)completion:(NSDictionary *)params
     onToken:(void (^)(NSMutableDictionary * tokenResult))onToken
 {
-    llama->rewind();
+    if (llama->completion == nullptr) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Completion not initialized" userInfo:nil];
+    }
+    llama->completion->rewind();
 
     //llama_reset_timings(llama->ctx);
 
@@ -576,46 +712,74 @@
         }
     }
 
-    if (!llama->initSampling()) {
+    if (!llama->completion->initSampling()) {
         @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to initialize sampling" userInfo:nil];
     }
-    llama->beginCompletion();
-    llama->loadPrompt();
+
+    NSString *prefillText = params[@"prefill_text"];
+    if (prefillText) {
+        llama->completion->prefill_text = [prefillText UTF8String];
+    }
+
+    auto chat_format = params[@"chat_format"] ? [params[@"chat_format"] intValue] : COMMON_CHAT_FORMAT_CONTENT_ONLY;
+    bool thinking_forced_open = [params[@"thinking_forced_open"] boolValue];
+
+    NSString *reasoningFormat = params[@"reasoning_format"];
+    if (!reasoningFormat) reasoningFormat = @"none";
+    std::string reasoningFormatStr = [reasoningFormat UTF8String];
+    common_reasoning_format reasoning_format = common_reasoning_format_from_name(reasoningFormatStr);
+
+    llama->completion->beginCompletion(chat_format, reasoning_format, thinking_forced_open);
+
+    try {
+        llama->completion->loadPrompt({});
+    } catch (const std::exception &e) {
+        llama->completion->endCompletion();
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    } catch (const std::runtime_error& e) {
+        llama->completion->endCompletion();
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    }
+
+    if (llama->completion->context_full) {
+        llama->completion->endCompletion();
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context is full" userInfo:nil];
+    }
 
     size_t sent_count = 0;
     size_t sent_token_probs_index = 0;
 
-    while (llama->has_next_token && !llama->is_interrupted) {
-        const rnllama::completion_token_output token_with_probs = llama->doCompletion();
-        if (token_with_probs.tok == -1 || llama->incomplete) {
+    while (llama->completion->has_next_token && !llama->completion->is_interrupted) {
+        const rnllama::completion_token_output token_with_probs = llama->completion->doCompletion();
+        if (token_with_probs.tok == -1 || llama->completion->incomplete) {
             continue;
         }
         const std::string token_text = common_token_to_piece(llama->ctx, token_with_probs.tok);
 
-        size_t pos = std::min(sent_count, llama->generated_text.size());
+        size_t pos = std::min(sent_count, llama->completion->generated_text.size());
 
-        const std::string str_test = llama->generated_text.substr(pos);
+        const std::string str_test = llama->completion->generated_text.substr(pos);
         bool is_stop_full = false;
         size_t stop_pos =
-            llama->findStoppingStrings(str_test, token_text.size(), rnllama::STOP_FULL);
+            llama->completion->findStoppingStrings(str_test, token_text.size(), rnllama::STOP_FULL);
         if (stop_pos != std::string::npos) {
             is_stop_full = true;
-            llama->generated_text.erase(
-                llama->generated_text.begin() + pos + stop_pos,
-                llama->generated_text.end());
-            pos = std::min(sent_count, llama->generated_text.size());
+            llama->completion->generated_text.erase(
+                llama->completion->generated_text.begin() + pos + stop_pos,
+                llama->completion->generated_text.end());
+            pos = std::min(sent_count, llama->completion->generated_text.size());
         } else {
             is_stop_full = false;
-            stop_pos = llama->findStoppingStrings(str_test, token_text.size(),
+            stop_pos = llama->completion->findStoppingStrings(str_test, token_text.size(),
                 rnllama::STOP_PARTIAL);
         }
 
         if (
             stop_pos == std::string::npos ||
             // Send rest of the text if we are at the end of the generation
-            (!llama->has_next_token && !is_stop_full && stop_pos > 0)
+            (!llama->completion->has_next_token && !is_stop_full && stop_pos > 0)
         ) {
-            const std::string to_send = llama->generated_text.substr(pos, std::string::npos);
+            const std::string to_send = llama->completion->generated_text.substr(pos, std::string::npos);
 
             sent_count += to_send.size();
 
@@ -626,38 +790,65 @@
 
             if (llama->params.sampling.n_probs > 0) {
                 const std::vector<llama_token> to_send_toks = common_tokenize(llama->ctx, to_send, false);
-                size_t probs_pos = std::min(sent_token_probs_index, llama->generated_token_probs.size());
-                size_t probs_stop_pos = std::min(sent_token_probs_index + to_send_toks.size(), llama->generated_token_probs.size());
+                size_t probs_pos = std::min(sent_token_probs_index, llama->completion->generated_token_probs.size());
+                size_t probs_stop_pos = std::min(sent_token_probs_index + to_send_toks.size(), llama->completion->generated_token_probs.size());
                 if (probs_pos < probs_stop_pos) {
-                    probs_output = std::vector<rnllama::completion_token_output>(llama->generated_token_probs.begin() + probs_pos, llama->generated_token_probs.begin() + probs_stop_pos);
+                    probs_output = std::vector<rnllama::completion_token_output>(llama->completion->generated_token_probs.begin() + probs_pos, llama->completion->generated_token_probs.begin() + probs_stop_pos);
                 }
                 sent_token_probs_index = probs_stop_pos;
 
                 tokenResult[@"completion_probabilities"] = [self tokenProbsToDict:probs_output];
             }
 
+            auto partial_output = llama->completion->parseChatOutput(true);
+            if (!partial_output.content.empty()) {
+                tokenResult[@"content"] = [NSString stringWithUTF8String:partial_output.content.c_str()];
+            }
+            if (!partial_output.reasoning_content.empty()) {
+                tokenResult[@"reasoning_content"] = [NSString stringWithUTF8String:partial_output.reasoning_content.c_str()];
+            }
+            if (!partial_output.tool_calls.empty()) {
+                NSMutableArray *toolCalls = [[NSMutableArray alloc] init];
+                for (const auto &tc : partial_output.tool_calls) {
+                    [toolCalls addObject:@{
+                        @"type": @"function",
+                        @"function": @{
+                            @"name": [NSString stringWithUTF8String:tc.name.c_str()],
+                            @"arguments": [NSString stringWithUTF8String:tc.arguments.c_str()],
+                        },
+                        @"id": tc.id.empty() ? [NSNull null] : [NSString stringWithUTF8String:tc.id.c_str()],
+                    }];
+                }
+                tokenResult[@"tool_calls"] = toolCalls;
+            }
+            if (!partial_output.accumulated_text.empty()) {
+                tokenResult[@"accumulated_text"] = [NSString stringWithUTF8String:partial_output.accumulated_text.c_str()];
+            }
+
             onToken(tokenResult);
         }
     }
 
-    llama_perf_context_print(llama->ctx);
-    llama->is_predicting = false;
+    common_perf_print(llama->ctx, llama->completion->ctx_sampling);
+    llama->completion->endCompletion();
 
     const auto timings = llama_perf_context(llama->ctx);
 
     NSMutableArray *toolCalls = nil;
     NSString *reasoningContent = nil;
     NSString *content = nil;
-    if (!llama->is_interrupted) {
+    NSMutableDictionary *result = [[NSMutableDictionary alloc] init];
+    result[@"chat_format"] = @(chat_format);
+    
+    if (!llama->completion->is_interrupted) {
         try {
-            auto chat_format = params[@"chat_format"] ? [params[@"chat_format"] intValue] : COMMON_CHAT_FORMAT_CONTENT_ONLY;
-            common_chat_msg message = common_chat_parse(llama->generated_text, static_cast<common_chat_format>(chat_format));
-            if (!message.reasoning_content.empty()) {
-                reasoningContent = [NSString stringWithUTF8String:message.reasoning_content.c_str()];
+            auto final_output = llama->completion->parseChatOutput(false);
+            if (!final_output.reasoning_content.empty()) {
+                reasoningContent = [NSString stringWithUTF8String:final_output.reasoning_content.c_str()];
             }
-            content = [NSString stringWithUTF8String:message.content.c_str()];
+            content = [NSString stringWithUTF8String:final_output.content.c_str()];
             toolCalls = [[NSMutableArray alloc] init];
-            for (const auto &tc : message.tool_calls) {
+            for (const auto &tc : final_output.tool_calls) {
                 [toolCalls addObject:@{
                     @"type": @"function",
                     @"function": @{
@@ -668,24 +859,25 @@
                 }];
             }
         } catch (const std::exception &e) {
-            // NSLog(@"Error parsing tool calls: %s", e.what());
+        } catch (...) {
         }
     }
 
-    NSMutableDictionary *result = [[NSMutableDictionary alloc] init];
-    result[@"text"] = [NSString stringWithUTF8String:llama->generated_text.c_str()]; // Original text
+    result[@"text"] = [NSString stringWithUTF8String:llama->completion->generated_text.c_str()]; // Original text
     if (content) result[@"content"] = content;
     if (reasoningContent) result[@"reasoning_content"] = reasoningContent;
     if (toolCalls && toolCalls.count > 0) result[@"tool_calls"] = toolCalls;
-    result[@"completion_probabilities"] = [self tokenProbsToDict:llama->generated_token_probs];
-    result[@"tokens_predicted"] = @(llama->num_tokens_predicted);
-    result[@"tokens_evaluated"] = @(llama->num_prompt_tokens);
-    result[@"truncated"] = @(llama->truncated);
-    result[@"stopped_eos"] = @(llama->stopped_eos);
-    result[@"stopped_word"] = @(llama->stopped_word);
-    result[@"stopped_limit"] = @(llama->stopped_limit);
-    result[@"stopping_word"] = [NSString stringWithUTF8String:llama->stopping_word.c_str()];
-    result[@"tokens_cached"] = @(llama->n_past);
+    result[@"completion_probabilities"] = [self tokenProbsToDict:llama->completion->generated_token_probs];
+    result[@"tokens_predicted"] = @(llama->completion->num_tokens_predicted);
+    result[@"tokens_evaluated"] = @(llama->completion->num_prompt_tokens);
+    result[@"truncated"] = @(llama->completion->truncated);
+    result[@"context_full"] = @(llama->completion->context_full);
+    result[@"interrupted"] = @(llama->completion->is_interrupted);
+    result[@"stopped_eos"] = @(llama->completion->stopped_eos);
+    result[@"stopped_word"] = @(llama->completion->stopped_word);
+    result[@"stopped_limit"] = @(llama->completion->stopped_limit);
+    result[@"stopping_word"] = [NSString stringWithUTF8String:llama->completion->stopping_word.c_str()];
+    result[@"tokens_cached"] = @(llama->completion->n_past);
     result[@"timings"] = @{
         @"prompt_n": @(timings.n_p_eval),
         @"prompt_ms": @(timings.t_p_eval_ms || 1),
@@ -701,16 +893,25 @@
 }
 
 - (void)stopCompletion {
-    llama->is_interrupted = true;
+    if (llama->completion == nullptr) {
+        return;
+    }
+    llama->completion->is_interrupted = true;
 }
 
 - (NSArray *)tokenize:(NSString *)text {
-    const std::vector<llama_token> toks = common_tokenize(llama->ctx, [text UTF8String], false);
-    NSMutableArray *result = [[NSMutableArray alloc] init];
-    for (llama_token tok : toks) {
-        [result addObject:@(tok)];
+    try {
+        const std::vector<llama_token> toks = common_tokenize(llama->ctx, [text UTF8String], false);
+        NSMutableArray *result = [[NSMutableArray alloc] init];
+        for (llama_token tok : toks) {
+            [result addObject:@(tok)];
+        }
+        return result;
+    } catch (const std::exception &e) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    } catch (const std::runtime_error& e) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
     }
-    return result;
 }
 
 - (NSString *)detokenize:(NSArray *)tokens {
@@ -742,8 +943,14 @@
 }
 
 - (NSDictionary *)embedding:(NSString *)text params:(NSDictionary *)params {
+    if (llama->completion == nullptr) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context has been released" userInfo:nil];
+    }
     if (llama->params.embedding != true) {
         @throw [NSException exceptionWithName:@"LlamaException" reason:@"Embedding is not enabled" userInfo:nil];
+    }
+    if ([self isPredicting]) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context is predicting" userInfo:nil];
     }
 
     common_params embdParams;
@@ -754,40 +961,36 @@
         embdParams.embd_normalize = [params[@"embd_normalize"] intValue];
     }
 
-    llama->rewind();
-
-    llama_perf_context_reset(llama->ctx);
-
     llama->params.prompt = [text UTF8String];
-
     llama->params.n_predict = 0;
+    try {
+        std::vector<float> result = llama->completion->embedding(embdParams);
 
-    if (!llama->initSampling()) {
-        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to initialize sampling" userInfo:nil];
+        NSMutableDictionary *resultDict = [[NSMutableDictionary alloc] init];
+        NSMutableArray *embeddingResult = [[NSMutableArray alloc] init];
+        for (float f : result) {
+            [embeddingResult addObject:@(f)];
+        }
+        resultDict[@"embedding"] = embeddingResult;
+        NSMutableArray *promptTokens = [[NSMutableArray alloc] init];
+        for (llama_token tok : llama->completion->embd) {
+            [promptTokens addObject:[NSString stringWithUTF8String:common_token_to_piece(llama->ctx, tok).c_str()]];
+        }
+        resultDict[@"prompt_tokens"] = promptTokens;
+        return resultDict;
+    } catch (const std::exception &e) {
+        llama->completion->endCompletion();
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    } catch (const std::runtime_error& e) {
+        llama->completion->endCompletion();
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
     }
-    llama->beginCompletion();
-    llama->loadPrompt();
-    llama->doCompletion();
-
-    std::vector<float> result = llama->getEmbedding(embdParams);
-
-    NSMutableDictionary *resultDict = [[NSMutableDictionary alloc] init];
-    NSMutableArray *embeddingResult = [[NSMutableArray alloc] init];
-    for (float f : result) {
-        [embeddingResult addObject:@(f)];
-    }
-    resultDict[@"embedding"] = embeddingResult;
-    NSMutableArray *promptTokens = [[NSMutableArray alloc] init];
-    for (llama_token tok : llama->embd) {
-        [promptTokens addObject:[NSString stringWithUTF8String:common_token_to_piece(llama->ctx, tok).c_str()]];
-    }
-    resultDict[@"prompt_tokens"] = promptTokens;
-
-    llama->is_predicting = false;
-    return resultDict;
 }
 
 - (NSDictionary *)loadSession:(NSString *)path {
+    if (llama->completion == nullptr) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context has been released" userInfo:nil];
+    }
     if (!path || [path length] == 0) {
         @throw [NSException exceptionWithName:@"LlamaException" reason:@"Session path is empty" userInfo:nil];
     }
@@ -796,12 +999,17 @@
     }
 
     size_t n_token_count_out = 0;
-    llama->embd.resize(llama->params.n_ctx);
-    if (!llama_state_load_file(llama->ctx, [path UTF8String], llama->embd.data(), llama->embd.capacity(), &n_token_count_out)) {
+    llama->completion->embd.resize(llama->params.n_ctx);
+    if (!llama_state_load_file(llama->ctx, [path UTF8String], llama->completion->embd.data(), llama->completion->embd.capacity(), &n_token_count_out)) {
         @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to load session" userInfo:nil];
     }
-    llama->embd.resize(n_token_count_out);
-    const std::string text = rnllama::tokens_to_str(llama->ctx, llama->embd.cbegin(), llama->embd.cend());
+    llama->completion->embd.resize(n_token_count_out);
+    // Find LLAMA_TOKEN_NULL in the tokens and resize the array to the index of the null token
+    auto null_token_iter = std::find(llama->completion->embd.begin(), llama->completion->embd.end(), LLAMA_TOKEN_NULL);
+    if (null_token_iter != llama->completion->embd.end()) {
+        llama->completion->embd.resize(std::distance(llama->completion->embd.begin(), null_token_iter));
+    }
+    const std::string text = rnllama::tokens_to_str(llama->ctx, llama->completion->embd.cbegin(), llama->completion->embd.cend());
     return @{
         @"tokens_loaded": @(n_token_count_out),
         @"prompt": [NSString stringWithUTF8String:text.c_str()]
@@ -809,10 +1017,18 @@
 }
 
 - (int)saveSession:(NSString *)path size:(int)size {
+    if (llama->completion == nullptr) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context has been released" userInfo:nil];
+    }
     if (!path || [path length] == 0) {
         @throw [NSException exceptionWithName:@"LlamaException" reason:@"Session path is empty" userInfo:nil];
     }
-    std::vector<llama_token> session_tokens = llama->embd;
+    std::vector<llama_token> session_tokens = llama->completion->embd;
+    // Find LLAMA_TOKEN_NULL in the tokens and resize the array to the index of the null token
+    auto null_token_iter = std::find(session_tokens.begin(), session_tokens.end(), LLAMA_TOKEN_NULL);
+    if (null_token_iter != session_tokens.end()) {
+        session_tokens.resize(std::distance(session_tokens.begin(), null_token_iter));
+    }
     int default_size = session_tokens.size();
     int save_size = size > 0 && size <= default_size ? size : default_size;
     if (!llama_state_save_file(llama->ctx, [path UTF8String], session_tokens.data(), save_size)) {
@@ -822,7 +1038,10 @@
 }
 
 - (NSString *)bench:(int)pp tg:(int)tg pl:(int)pl nr:(int)nr {
-    return [NSString stringWithUTF8String:llama->bench(pp, tg, pl, nr).c_str()];
+    if (llama->completion == nullptr) {
+        return @"";
+    }
+    return [NSString stringWithUTF8String:llama->completion->bench(pp, tg, pl, nr).c_str()];
 }
 
 - (void)applyLoraAdapters:(NSArray *)loraAdapters {
@@ -859,7 +1078,592 @@
     return result;
 }
 
+- (void)clearCache:(BOOL)clearData {
+    if (llama == nullptr) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Context has been released" userInfo:nil];
+    }
+    llama->clearCache(clearData);
+}
+
+// Parallel decoding: Queue a completion request
+- (NSNumber *)queueCompletion:(NSDictionary *)params onToken:(void (^)(NSMutableDictionary *))onToken onComplete:(void (^)(NSDictionary *))onComplete {
+    if (!is_model_loaded) {
+        return @(-1);
+    }
+
+    // Check if parallel mode is enabled
+    if (!llama->parallel_mode_enabled) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:@"Parallel mode is not enabled. Call enableParallelMode() first."
+                                     userInfo:nil];
+    }
+
+    __block int requestId = -1;
+
+    // Tokenize prompt
+    NSString *prompt = params[@"prompt"];
+    NSArray *mediaPaths = params[@"media_paths"];
+    rnllama::llama_rn_tokenize_result tokenize_result = llama->tokenize(
+        prompt ? [prompt UTF8String] : "",
+        mediaPaths ? [self convertNSArrayToStdVector:mediaPaths] : std::vector<std::string>()
+    );
+
+    // Convert params to common_params (match completion method parameter handling)
+    common_params cpp_params = llama->params;
+
+    // Sampling parameters
+    cpp_params.sampling.seed = params[@"seed"] ? [params[@"seed"] intValue] : -1;
+
+    if (params[@"n_threads"]) {
+        int nThreads = params[@"n_threads"] ? [params[@"n_threads"] intValue] : cpp_params.cpuparams.n_threads;
+        const int maxThreads = (int) [[NSProcessInfo processInfo] processorCount];
+        const int defaultNThreads = nThreads == 4 ? 2 : MIN(4, maxThreads);
+        cpp_params.cpuparams.n_threads = nThreads > 0 ? nThreads : defaultNThreads;
+    }
+    if (params[@"n_predict"]) cpp_params.n_predict = [params[@"n_predict"] intValue];
+    if (params[@"ignore_eos"]) cpp_params.sampling.ignore_eos = [params[@"ignore_eos"] boolValue];
+
+    auto & sparams = cpp_params.sampling;
+
+    if (params[@"temperature"]) sparams.temp = [params[@"temperature"] doubleValue];
+    if (params[@"n_probs"]) sparams.n_probs = [params[@"n_probs"] intValue];
+
+    if (params[@"penalty_last_n"]) sparams.penalty_last_n = [params[@"penalty_last_n"] intValue];
+    if (params[@"penalty_repeat"]) sparams.penalty_repeat = [params[@"penalty_repeat"] doubleValue];
+    if (params[@"penalty_freq"]) sparams.penalty_freq = [params[@"penalty_freq"] doubleValue];
+    if (params[@"penalty_present"]) sparams.penalty_present = [params[@"penalty_present"] doubleValue];
+
+    if (params[@"mirostat"]) sparams.mirostat = [params[@"mirostat"] intValue];
+    if (params[@"mirostat_tau"]) sparams.mirostat_tau = [params[@"mirostat_tau"] doubleValue];
+    if (params[@"mirostat_eta"]) sparams.mirostat_eta = [params[@"mirostat_eta"] doubleValue];
+
+    if (params[@"top_k"]) sparams.top_k = [params[@"top_k"] intValue];
+    if (params[@"top_p"]) sparams.top_p = [params[@"top_p"] doubleValue];
+    if (params[@"min_p"]) sparams.min_p = [params[@"min_p"] doubleValue];
+    if (params[@"xtc_threshold"]) sparams.xtc_threshold = [params[@"xtc_threshold"] doubleValue];
+    if (params[@"xtc_probability"]) sparams.xtc_probability = [params[@"xtc_probability"] doubleValue];
+    if (params[@"typical_p"]) sparams.typ_p = [params[@"typical_p"] doubleValue];
+
+    if (params[@"dry_multiplier"]) sparams.dry_multiplier = [params[@"dry_multiplier"] doubleValue];
+    if (params[@"dry_base"]) sparams.dry_base = [params[@"dry_base"] doubleValue];
+    if (params[@"dry_allowed_length"]) sparams.dry_allowed_length = [params[@"dry_allowed_length"] intValue];
+    if (params[@"dry_penalty_last_n"]) sparams.dry_penalty_last_n = [params[@"dry_penalty_last_n"] intValue];
+
+    if (params[@"top_n_sigma"]) sparams.top_n_sigma = [params[@"top_n_sigma"] doubleValue];
+
+    // Dry sequence breakers
+    if (params[@"dry_sequence_breakers"] && [params[@"dry_sequence_breakers"] isKindOfClass:[NSArray class]]) {
+        NSArray *dry_sequence_breakers = params[@"dry_sequence_breakers"];
+        for (NSString *s in dry_sequence_breakers) {
+            sparams.dry_sequence_breakers.push_back([s UTF8String]);
+        }
+    }
+
+    // Grammar
+    if (params[@"grammar"]) {
+        sparams.grammar = [params[@"grammar"] UTF8String];
+    }
+
+    if (params[@"json_schema"] && !params[@"grammar"]) {
+        sparams.grammar = json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]));
+    }
+
+    if (params[@"grammar_lazy"]) {
+        sparams.grammar_lazy = [params[@"grammar_lazy"] boolValue];
+    }
+
+    // Preserved tokens
+    if (params[@"preserved_tokens"] && [params[@"preserved_tokens"] isKindOfClass:[NSArray class]]) {
+        NSArray *preserved_tokens = params[@"preserved_tokens"];
+        for (NSString *token in preserved_tokens) {
+            auto ids = common_tokenize(llama->ctx, [token UTF8String], false, true);
+            if (ids.size() == 1) {
+                sparams.preserved_tokens.insert(ids[0]);
+            }
+        }
+    }
+
+    // Grammar triggers
+    if (params[@"grammar_triggers"] && [params[@"grammar_triggers"] isKindOfClass:[NSArray class]]) {
+        NSArray *grammar_triggers = params[@"grammar_triggers"];
+        for (NSDictionary *grammar_trigger in grammar_triggers) {
+            const auto type = static_cast<common_grammar_trigger_type>([grammar_trigger[@"type"] intValue]);
+            const auto & word = [grammar_trigger[@"value"] UTF8String];
+
+            if (type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
+                auto ids = common_tokenize(llama->ctx, word, false, true);
+                if (ids.size() == 1) {
+                    auto token = ids[0];
+                    if (std::find(sparams.preserved_tokens.begin(), sparams.preserved_tokens.end(), (llama_token) token) == sparams.preserved_tokens.end()) {
+                        throw std::runtime_error("Grammar trigger word should be marked as preserved token");
+                    }
+                    common_grammar_trigger trigger;
+                    trigger.type = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN;
+                    trigger.value = word;
+                    trigger.token = token;
+                    sparams.grammar_triggers.push_back(std::move(trigger));
+                } else {
+                    sparams.grammar_triggers.push_back({COMMON_GRAMMAR_TRIGGER_TYPE_WORD, word});
+                }
+            } else {
+                common_grammar_trigger trigger;
+                trigger.type = type;
+                trigger.value = word;
+                if (type == COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN) {
+                    const auto token = (llama_token) [grammar_trigger[@"token"] intValue];
+                    trigger.token = token;
+                }
+                sparams.grammar_triggers.push_back(std::move(trigger));
+            }
+        }
+    }
+
+    // Stop words (antiprompt)
+    cpp_params.antiprompt.clear();
+    if (params[@"stop"]) {
+        NSArray *stop = params[@"stop"];
+        for (NSString *s in stop) {
+            cpp_params.antiprompt.push_back([s UTF8String]);
+        }
+    }
+
+    // Logit bias
+    const llama_model * model = llama_get_model(llama->ctx);
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    sparams.logit_bias.clear();
+    if (params[@"ignore_eos"] && [params[@"ignore_eos"] boolValue]) {
+        sparams.logit_bias[llama_vocab_eos(vocab)].bias = -INFINITY;
+    }
+
+    if (params[@"logit_bias"] && [params[@"logit_bias"] isKindOfClass:[NSArray class]]) {
+        const int n_vocab = llama_vocab_n_tokens(vocab);
+        NSArray *logit_bias = params[@"logit_bias"];
+        for (NSArray *el in logit_bias) {
+            if ([el isKindOfClass:[NSArray class]] && [el count] == 2) {
+                llama_token tok = [el[0] intValue];
+                if (tok >= 0 && tok < n_vocab) {
+                    if ([el[1] isKindOfClass:[NSNumber class]]) {
+                        sparams.logit_bias[tok].bias = [el[1] doubleValue];
+                    } else if ([el[1] isKindOfClass:[NSNumber class]] && ![el[1] boolValue]) {
+                        sparams.logit_bias[tok].bias = -INFINITY;
+                    }
+                }
+            }
+        }
+    }
+
+    // Get chat format params
+    int chat_format = params[@"chat_format"] ? [params[@"chat_format"] intValue] : 0;
+
+    // Convert reasoning_format from string to enum (same as completion method)
+    NSString *reasoningFormat = params[@"reasoning_format"];
+    if (!reasoningFormat) reasoningFormat = @"none";
+    std::string reasoningFormatStr = [reasoningFormat UTF8String];
+    common_reasoning_format reasoning_format = common_reasoning_format_from_name(reasoningFormatStr);
+
+    bool thinking_forced_open = params[@"thinking_forced_open"] ? [params[@"thinking_forced_open"] boolValue] : false;
+
+    // Get prefill text
+    NSString *prefillText = params[@"prefill_text"];
+    std::string prefill_text_str = prefillText ? [prefillText UTF8String] : "";
+
+    // Get state parameters
+    std::string load_state_path;
+    std::string save_state_path;
+    int32_t save_state_size = -1;
+
+    if (params[@"load_state_path"] && [params[@"load_state_path"] isKindOfClass:[NSString class]]) {
+        NSString *path = params[@"load_state_path"];
+        // Remove file:// prefix if present
+        if ([path hasPrefix:@"file://"]) {
+            path = [path substringFromIndex:7];
+        }
+        load_state_path = [path UTF8String];
+    }
+
+    if (params[@"save_state_path"] && [params[@"save_state_path"] isKindOfClass:[NSString class]]) {
+        NSString *path = params[@"save_state_path"];
+        // Remove file:// prefix if present
+        if ([path hasPrefix:@"file://"]) {
+            path = [path substringFromIndex:7];
+        }
+        save_state_path = [path UTF8String];
+    }
+
+    if (params[@"save_state_size"] && [params[@"save_state_size"] isKindOfClass:[NSNumber class]]) {
+        save_state_size = [params[@"save_state_size"] intValue];
+    }
+
+    // Copy blocks to ensure they're retained on the heap for async use
+    void (^onTokenCopy)(NSMutableDictionary *) = [onToken copy];
+    void (^onCompleteCopy)(NSDictionary *) = [onComplete copy];
+
+    // Capture slot manager for parseChatOutput
+    auto* slot_mgr = llama->slot_manager;
+
+    // Create callbacks
+    auto token_callback = [onTokenCopy, slot_mgr](const rnllama::completion_token_output& token) {
+        // Capture all needed data from token before dispatching
+        int32_t reqId = token.request_id;
+        int32_t tok = token.tok;
+        std::string token_text = token.text;
+
+        // Copy probabilities vector to avoid dangling reference
+        std::vector<rnllama::completion_token_output::token_prob> probs_copy = token.probs;
+
+        // Find slot and parse chat output
+        rnllama::completion_chat_output parsed_output;
+        bool has_parsed_output = false;
+        if (slot_mgr) {
+            auto* slot = slot_mgr->get_slot_by_request_id(reqId);
+            if (slot) {
+                parsed_output = slot->parseChatOutput(true);  // is_partial = true
+                has_parsed_output = true;
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableDictionary *result = [[NSMutableDictionary alloc] init];
+            result[@"requestId"] = @(reqId);
+            result[@"token"] = [NSString stringWithUTF8String:token_text.c_str()];
+
+            // Add probabilities if available
+            if (!probs_copy.empty()) {
+                NSMutableArray *probs = [[NSMutableArray alloc] init];
+                for (const auto& prob : probs_copy) {
+                    [probs addObject:@{
+                        @"tok": @(prob.tok),
+                        @"prob": @(prob.prob)
+                    }];
+                }
+                result[@"probs"] = probs;
+            }
+
+            // Add parsed chat output (content, reasoning_content, tool_calls, accumulated_text)
+            if (has_parsed_output) {
+                if (!parsed_output.content.empty()) {
+                    result[@"content"] = [NSString stringWithUTF8String:parsed_output.content.c_str()];
+                }
+                if (!parsed_output.reasoning_content.empty()) {
+                    result[@"reasoning_content"] = [NSString stringWithUTF8String:parsed_output.reasoning_content.c_str()];
+                }
+                if (!parsed_output.tool_calls.empty()) {
+                    NSMutableArray *toolCalls = [[NSMutableArray alloc] init];
+                    for (const auto &tc : parsed_output.tool_calls) {
+                        [toolCalls addObject:@{
+                            @"type": @"function",
+                            @"function": @{
+                                @"name": [NSString stringWithUTF8String:tc.name.c_str()],
+                                @"arguments": [NSString stringWithUTF8String:tc.arguments.c_str()],
+                            },
+                            @"id": tc.id.empty() ? [NSNull null] : [NSString stringWithUTF8String:tc.id.c_str()],
+                        }];
+                    }
+                    result[@"tool_calls"] = toolCalls;
+                }
+                if (!parsed_output.accumulated_text.empty()) {
+                    result[@"accumulated_text"] = [NSString stringWithUTF8String:parsed_output.accumulated_text.c_str()];
+                }
+            }
+
+            if (onTokenCopy) {
+                onTokenCopy(result);
+            }
+        });
+    };
+
+    auto complete_callback = [onCompleteCopy](rnllama::llama_rn_slot* slot) {
+        // Capture all needed data from slot before dispatching
+        int32_t reqId = slot->request_id;
+        std::string generated_text = slot->generated_text;
+        bool stopped_eos = slot->stopped_eos;
+        bool stopped_limit = slot->stopped_limit;
+        bool stopped_word = slot->stopped_word;
+        bool context_full = slot->context_full;
+        bool incomplete = slot->incomplete;
+        int n_decoded = slot->n_decoded;
+        std::string error_message = slot->error_message;
+
+        // Get timings
+        rnllama::slot_timings timings = slot->get_timings();
+
+        // Parse final chat output
+        rnllama::completion_chat_output final_output;
+        bool has_final_output = false;
+        try {
+            final_output = slot->parseChatOutput(false);  // is_partial = false
+            has_final_output = true;
+        } catch (...) {
+            // Ignore parsing errors
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableDictionary *result = [[NSMutableDictionary alloc] init];
+            result[@"requestId"] = @(reqId);
+            result[@"text"] = [NSString stringWithUTF8String:generated_text.c_str()];
+            result[@"stopped_eos"] = @(stopped_eos);
+            result[@"stopped_limit"] = @(stopped_limit);
+            result[@"stopped_word"] = @(stopped_word);
+            result[@"context_full"] = @(context_full);
+            result[@"incomplete"] = @(incomplete);
+            result[@"n_decoded"] = @(n_decoded);
+
+            // Add timings
+            result[@"timings"] = @{
+                @"cache_n": @(timings.cache_n),
+                @"prompt_n": @(timings.prompt_n),
+                @"prompt_ms": @(timings.prompt_ms),
+                @"prompt_per_token_ms": @(timings.prompt_per_token_ms),
+                @"prompt_per_second": @(timings.prompt_per_second),
+                @"predicted_n": @(timings.predicted_n),
+                @"predicted_ms": @(timings.predicted_ms),
+                @"predicted_per_token_ms": @(timings.predicted_per_token_ms),
+                @"predicted_per_second": @(timings.predicted_per_second)
+            };
+
+            // Add error message if present
+            if (!error_message.empty()) {
+                result[@"error"] = [NSString stringWithUTF8String:error_message.c_str()];
+            }
+
+            // Add parsed chat output (final)
+            if (has_final_output) {
+                if (!final_output.content.empty()) {
+                    result[@"content"] = [NSString stringWithUTF8String:final_output.content.c_str()];
+                }
+                if (!final_output.reasoning_content.empty()) {
+                    result[@"reasoning_content"] = [NSString stringWithUTF8String:final_output.reasoning_content.c_str()];
+                }
+                if (!final_output.tool_calls.empty()) {
+                    NSMutableArray *toolCalls = [[NSMutableArray alloc] init];
+                    for (const auto &tc : final_output.tool_calls) {
+                        [toolCalls addObject:@{
+                            @"type": @"function",
+                            @"function": @{
+                                @"name": [NSString stringWithUTF8String:tc.name.c_str()],
+                                @"arguments": [NSString stringWithUTF8String:tc.arguments.c_str()],
+                            },
+                            @"id": tc.id.empty() ? [NSNull null] : [NSString stringWithUTF8String:tc.id.c_str()],
+                        }];
+                    }
+                    result[@"tool_calls"] = toolCalls;
+                }
+            }
+
+            if (onCompleteCopy) {
+                onCompleteCopy(result);
+            }
+        });
+    };
+
+    // Queue the request
+    requestId = llama->slot_manager->queue_request(
+        cpp_params,
+        tokenize_result.tokens,
+        tokenize_result.has_media ? [self convertNSArrayToStdVector:mediaPaths] : std::vector<std::string>(),
+        prompt ? [prompt UTF8String] : "",  // Original prompt text (needed for media processing)
+        chat_format,
+        reasoning_format,
+        thinking_forced_open,
+        prefill_text_str,
+        load_state_path,
+        save_state_path,
+        save_state_size,
+        token_callback,
+        complete_callback
+    );
+
+    return @(requestId);
+}
+
+// Cancel a queued request
+- (void)cancelRequest:(NSNumber *)requestId {
+    if (llama && llama->parallel_mode_enabled && llama->slot_manager) {
+        llama->slot_manager->cancel_request([requestId intValue]);
+    }
+}
+
+// Queue an embedding request (async, non-blocking)
+- (NSNumber *)queueEmbedding:(NSString *)text params:(NSDictionary *)params onResult:(void (^)(int32_t, NSArray *))onResult {
+    if (!is_model_loaded) {
+        return @(-1);
+    }
+
+    // Check if parallel mode is enabled
+    if (!llama->parallel_mode_enabled) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:@"Parallel mode is not enabled. Call enableParallelMode() first."
+                                     userInfo:nil];
+    }
+
+    // Get normalization parameter
+    int embd_normalize = llama->params.embd_normalize;
+    if (params[@"embd_normalize"] && [params[@"embd_normalize"] isKindOfClass:[NSNumber class]]) {
+        embd_normalize = [params[@"embd_normalize"] intValue];
+    }
+
+    // Tokenize text
+    const llama_vocab* vocab = llama_model_get_vocab(llama->model);
+    const bool add_bos = llama_vocab_get_add_bos(vocab);
+    const bool is_enc_dec = llama_model_has_encoder(llama->model);
+    std::vector<llama_token> tokens = common_tokenize(
+        llama->ctx,
+        [text UTF8String],
+        add_bos || is_enc_dec,
+        true
+    );
+
+    // Copy callback to ensure it's retained on the heap for async use
+    void (^onResultCopy)(int32_t, NSArray *) = [onResult copy];
+
+    // Queue embedding request
+    int32_t request_id = llama->slot_manager->queue_embedding_request(
+        tokens,
+        embd_normalize,
+        [onResultCopy](int32_t request_id, const std::vector<float>& embedding) {
+            // Copy embedding vector to avoid dangling reference
+            NSLog(@"embedding: 0: %f, 1: %f, 2: %f", embedding[0], embedding[1], embedding[2]);
+            std::vector<float> embedding_copy = embedding;
+
+            // Convert result to NSArray and dispatch to main queue
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSMutableArray *embeddingArray = [[NSMutableArray alloc] init];
+                for (float val : embedding_copy) {
+                    [embeddingArray addObject:@(val)];
+                }
+
+                if (onResultCopy) {
+                    onResultCopy(request_id, embeddingArray);
+                }
+            });
+        }
+    );
+
+    return @(request_id);
+}
+
+// Queue a rerank request (async, non-blocking)
+- (NSNumber *)queueRerank:(NSString *)query documents:(NSArray<NSString *> *)documents params:(NSDictionary *)params onResults:(void (^)(int32_t, NSArray *))onResults {
+    if (!is_model_loaded) {
+        return @(-1);
+    }
+
+    // Check if parallel mode is enabled
+    if (!llama->parallel_mode_enabled) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:@"Parallel mode is not enabled. Call enableParallelMode() first."
+                                     userInfo:nil];
+    }
+
+    // Get normalization parameter
+    int normalize = 0;  // Default for rerank
+    if (params[@"normalize"] && [params[@"normalize"] isKindOfClass:[NSNumber class]]) {
+        normalize = [params[@"normalize"] intValue];
+    }
+
+    // Convert NSArray to std::vector<std::string>
+    std::vector<std::string> docs_vector;
+    for (NSString *doc in documents) {
+        docs_vector.push_back([doc UTF8String]);
+    }
+
+    // Copy callback to ensure it's retained on the heap for async use
+    void (^onResultsCopy)(int32_t, NSArray *) = [onResults copy];
+
+    // Queue rerank request
+    int32_t request_id = llama->slot_manager->queue_rerank_request(
+        std::string([query UTF8String]),
+        docs_vector,
+        normalize,
+        [onResultsCopy](int32_t request_id, const std::vector<float>& scores) {
+            // Copy scores vector to avoid dangling reference
+            std::vector<float> scores_copy = scores;
+
+            // Convert results to NSArray and dispatch to main queue
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSMutableArray *resultsArray = [[NSMutableArray alloc] init];
+                for (size_t i = 0; i < scores_copy.size(); i++) {
+                    [resultsArray addObject:@{
+                        @"score": @(scores_copy[i]),
+                        @"index": @((int)i)
+                    }];
+                }
+
+                if (onResultsCopy) {
+                    onResultsCopy(request_id, resultsArray);
+                }
+            });
+        }
+    );
+
+    return @(request_id);
+}
+
+- (BOOL)enableParallelMode:(int)nParallel nBatch:(int)nBatch {
+    if (!llama) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:@"Cannot enable parallel mode: context not initialized"
+                                     userInfo:nil];
+    }
+
+    // If parallel mode is already enabled, stop the processing loop first
+    if (llama->parallel_mode_enabled) {
+        NSLog(@"Reconfiguring parallel mode with %d slots", nParallel);
+        [self stopProcessingLoop];
+    }
+
+    try {
+        llama->enableParallelMode(nParallel, nBatch);
+    } catch (const std::runtime_error& e) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:[NSString stringWithUTF8String:e.what()]
+                                     userInfo:nil];
+    } catch (const std::exception& e) {
+        @throw [NSException exceptionWithName:@"LlamaException"
+                                       reason:[NSString stringWithUTF8String:e.what()]
+                                     userInfo:nil];
+    }
+
+    [self startProcessingLoop];
+    return YES;
+}
+
+- (void)disableParallelMode {
+    if (!llama) {
+        return;
+    }
+
+    [self stopProcessingLoop];
+    llama->disableParallelMode();
+}
+
+// Start background processing loop
+- (void)startProcessingLoop {
+    if (llama && llama->parallel_mode_enabled && llama->slot_manager) {
+        llama->slot_manager->start_processing_loop();
+    }
+}
+
+// Stop background processing loop
+- (void)stopProcessingLoop {
+    if (llama && llama->slot_manager) {
+        llama->slot_manager->stop_processing_loop();
+    }
+}
+
+// Helper method to convert NSArray to std::vector<std::string>
+- (std::vector<std::string>)convertNSArrayToStdVector:(NSArray *)array {
+    std::vector<std::string> result;
+    for (NSString *str in array) {
+        result.push_back([str UTF8String]);
+    }
+    return result;
+}
+
 - (void)invalidate {
+    [self stopProcessingLoop];
+
     delete llama;
     // llama_backend_free();
 }

@@ -3,10 +3,10 @@ require 'json'
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
 base_ld_flags = "-framework Accelerate -framework Foundation -framework Metal -framework MetalKit"
-base_compiler_flags = "-fmodules -fcxx-modules -fno-objc-arc -DLM_GGML_USE_CPU -DLM_GGML_USE_ACCELERATE -Wno-shorten-64-to-32"
+base_compiler_flags = "-fmodules -fcxx-modules -fno-objc-arc -DLM_GGML_USE_CPU -DLM_GGML_USE_ACCELERATE -DLM_GGML_USE_BLAS -DLM_GGML_BLAS_USE_ACCELERATE -Wno-shorten-64-to-32"
 
 if ENV["LLAMA_DISABLE_METAL"] != "1" then
-  base_compiler_flags += " -DLM_GGML_USE_METAL -DLM_GGML_METAL_USE_BF16" # -DLM_GGML_METAL_NDEBUG
+  base_compiler_flags += " -DLM_GGML_USE_METAL" # -DLM_GGML_METAL_USE_BF16 # -DLM_GGML_METAL_NDEBUG
 end
 
 # Use base_optimizer_flags = "" for debug builds
@@ -45,7 +45,7 @@ Pod::Spec.new do |s|
 #    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
     "OTHER_LDFLAGS" => base_ld_flags,
     "OTHER_CFLAGS" => base_optimizer_flags,
-    "OTHER_CPLUSPLUSFLAGS" => base_optimizer_flags + " -std=c++17"
+    "OTHER_CPLUSPLUSFLAGS" => base_optimizer_flags + " -std=c++20"
   }
   # install_modules_dependencies(s)
 end

@@ -14,7 +14,7 @@ def capacitor_pods
   pod 'CantooCapacitorLlama', :path => '../../..'
 end
 
- use_frameworks! :linkage => :static
+use_frameworks! :linkage => :static
 
 target 'App' do
   capacitor_pods
