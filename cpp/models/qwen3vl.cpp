@@ -2,11 +2,12 @@
 
 llm_build_qwen3vl::llm_build_qwen3vl(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
     const size_t n_deepstack_layers = hparams.n_deepstack_layers;
-    const int64_t n_embd = hparams.n_embd;
-    const int64_t n_embd_head = hparams.n_embd_head_v;
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
-    LM_GGML_ASSERT(n_embd_head == hparams.n_rot);
+    const int64_t n_embd      = hparams.n_embd;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    LM_GGML_ASSERT(n_embd_head == n_rot);
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -15,17 +16,6 @@ llm_build_qwen3vl::llm_build_qwen3vl(const llama_model & model, const llm_graph_
 
     int sections[4];
     std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
-
-    std::vector<lm_ggml_tensor *> deepstack_features(n_deepstack_layers, nullptr);
-
-    if (ubatch.embd) {
-        // Image input: split main embd and deepstack embds
-        lm_ggml_tensor * inpL_main = lm_ggml_view_2d(ctx0, inpL, n_embd, n_tokens, inpL->nb[1], 0);
-        for (size_t i = 0; i < n_deepstack_layers; i++) {
-            deepstack_features[i] = lm_ggml_view_2d(ctx0, inpL, n_embd, n_tokens, inpL->nb[1], (i + 1) * n_embd * sizeof(float));
-        }
-        inpL = inpL_main;
-    }
 
     // inp_pos - contains the positions
     lm_ggml_tensor * inp_pos = build_inp_pos();
@@ -46,18 +36,8 @@ llm_build_qwen3vl::llm_build_qwen3vl(const llama_model & model, const llm_graph_
         // self-attention
         {
             // compute Q and K and RoPE them
-            lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
-
-            lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
-
-            lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
-
-            Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
-            Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
 
             Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
             cb(Qcur, "Qcur_normed", il);
@@ -82,7 +62,7 @@ llm_build_qwen3vl::llm_build_qwen3vl(const llama_model & model, const llm_graph_
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].bo,
+                    model.layers[il].wo, model.layers[il].bo, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
 
@@ -113,8 +93,9 @@ llm_build_qwen3vl::llm_build_qwen3vl(const llama_model & model, const llm_graph_
         cur = build_cvec(cur, il);
         cb(cur, "l_out", il);
 
-        if (ubatch.embd && (size_t)il < n_deepstack_layers) {
-            cur = lm_ggml_add(ctx0, cur, deepstack_features[il]);
+        if (il < (int) n_deepstack_layers) {
+            lm_ggml_tensor * ds = lm_ggml_view_2d(ctx0, res->t_inp_embd, n_embd, n_tokens, res->t_inp_embd->nb[1], (il + 1) * n_embd * sizeof(float));
+            cur = lm_ggml_add(ctx0, cur, ds);
             cb(cur, "deepstack_out", il);
         }
 

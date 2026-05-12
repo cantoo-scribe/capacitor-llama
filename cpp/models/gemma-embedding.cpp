@@ -1,21 +1,17 @@
 #include "models.h"
 
-
-
 llm_build_gemma_embedding::llm_build_gemma_embedding(const llama_model & model, const llm_graph_params & params) :
     llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_k;
+    const int64_t n_embd_head = hparams.n_embd_head_k();
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
 
     inpL = build_inp_embd(model.tok_embd);
 
-    // important: do not normalize weights for raw embeddings input (i.e. encoded image emdeddings)
-    if (ubatch.token) {
-        inpL = lm_ggml_scale(ctx0, inpL, sqrtf(n_embd));
-        cb(inpL, "inp_scaled", -1);
-    }
+    // important: do not normalize weights for raw embeddings input (i.e. encoded image embeddings)
+    inpL = lm_ggml_scale(ctx0, inpL, ubatch.token ? sqrtf(n_embd) : 1.0f);
+    cb(inpL, "inp_scaled", -1);
 
     // inp_pos - contains the positions
     lm_ggml_tensor * inp_pos = build_inp_pos();
@@ -35,18 +31,8 @@ llm_build_gemma_embedding::llm_build_gemma_embedding(const llama_model & model, 
         // self-attention
         {
             // compute Q and K and RoPE them
-            lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
-
-            lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
-
-            lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
-
-            Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head, n_tokens);
-            Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
 
             Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
             cb(Qcur, "Qcur_normed", il);
@@ -69,7 +55,7 @@ llm_build_gemma_embedding::llm_build_gemma_embedding(const llama_model & model, 
 
             cur =
                 build_attn(inp_attn,
-                    model.layers[il].wo, NULL,
+                    model.layers[il].wo, NULL, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f, il);
         }
 

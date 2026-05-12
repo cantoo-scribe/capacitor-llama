@@ -76,10 +76,13 @@ int32_t llama_rn_slot_manager::queue_request(
     const std::string& prompt_text,
     int chat_format,
     common_reasoning_format reasoning_format,
-    bool thinking_forced_open,
+    const std::string& generation_prompt,
+    const std::string& chat_parser,
     const std::string& prefill_text,
     const std::string& load_state_path,
     const std::string& save_state_path,
+    const std::string& save_prompt_state_path,
+    int32_t load_state_size,
     int32_t save_state_size,
     std::function<void(const completion_token_output&)> on_token,
     std::function<void(llama_rn_slot*)> on_complete
@@ -87,10 +90,12 @@ int32_t llama_rn_slot_manager::queue_request(
     // Generate unique request ID
     int32_t request_id = next_request_id++;
 
-    LOG_INFO("Queuing request %d with %zu prompt tokens (load_state=%s, save_state=%s, save_size=%d)",
+    LOG_INFO("Queuing request %d with %zu prompt tokens (load_state=%s, save_state=%s, save_prompt_state=%s, load_size=%d, save_size=%d)",
              request_id, prompt.size(),
              load_state_path.empty() ? "no" : load_state_path.c_str(),
              save_state_path.empty() ? "no" : save_state_path.c_str(),
+             save_prompt_state_path.empty() ? "no" : save_prompt_state_path.c_str(),
+             load_state_size,
              save_state_size);
 
     // Create queued request
@@ -103,10 +108,13 @@ int32_t llama_rn_slot_manager::queue_request(
     request.prompt_text = prompt_text;
     request.chat_format = chat_format;
     request.reasoning_format = reasoning_format;
-    request.thinking_forced_open = thinking_forced_open;
+    request.generation_prompt = generation_prompt;
+    request.chat_parser = chat_parser;
     request.prefill_text = prefill_text;
     request.load_state_path = load_state_path;
     request.save_state_path = save_state_path;
+    request.save_prompt_state_path = save_prompt_state_path;
+    request.load_state_size = load_state_size;
     request.save_state_size = save_state_size;
     request.on_token = on_token;
     request.on_complete = on_complete;
@@ -119,6 +127,16 @@ int32_t llama_rn_slot_manager::queue_request(
 
     // Notify processing thread that new work is available
     slots_cv.notify_one();
+
+    // Notify subscribers of status change (new request queued)
+    bool has_subscribers = false;
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex);
+        has_subscribers = !status_subscribers.empty();
+    }
+    if (has_subscribers) {
+        notify_status_change();
+    }
 
     return request_id;
 }
@@ -159,6 +177,16 @@ int32_t llama_rn_slot_manager::queue_embedding_request(
     }
 
     slots_cv.notify_one();
+
+    // Notify subscribers of status change (new request queued)
+    bool has_subscribers = false;
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex);
+        has_subscribers = !status_subscribers.empty();
+    }
+    if (has_subscribers) {
+        notify_status_change();
+    }
 
     return request_id;
 }
@@ -262,6 +290,16 @@ int32_t llama_rn_slot_manager::queue_rerank_request(
 
     slots_cv.notify_one();
 
+    // Notify subscribers of status change (new request queued)
+    bool has_subscribers = false;
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex);
+        has_subscribers = !status_subscribers.empty();
+    }
+    if (has_subscribers) {
+        notify_status_change();
+    }
+
     return request_id;
 }
 
@@ -313,6 +351,8 @@ void llama_rn_slot_manager::release_slot(llama_rn_slot* slot) {
 void llama_rn_slot_manager::cancel_request(int32_t request_id) {
     LOG_INFO("Cancelling request %d", request_id);
 
+    bool cancelled = false;
+
     // Check if request is active
     auto it = active_requests.find(request_id);
     if (it != active_requests.end()) {
@@ -323,21 +363,34 @@ void llama_rn_slot_manager::cancel_request(int32_t request_id) {
         slot->state = SLOT_STATE_DONE;
         active_requests.erase(it);
         LOG_INFO("Request %d cancelled (was active in slot %d)", request_id, slot->id);
+        cancelled = true;
+    } else {
+        // Remove from pending queue
+        auto pending_it = std::remove_if(queue_requests.begin(), queue_requests.end(),
+            [request_id](const llama_rn_queued_request& req) {
+                return req.request_id == request_id;
+            });
+        if (pending_it != queue_requests.end()) {
+            queue_requests.erase(pending_it, queue_requests.end());
+            LOG_INFO("Request %d cancelled (was in pending queue)", request_id);
+            cancelled = true;
+        }
+    }
+
+    if (!cancelled) {
+        LOG_WARNING("Request %d not found for cancellation", request_id);
         return;
     }
 
-    // Remove from pending queue
-    auto pending_it = std::remove_if(queue_requests.begin(), queue_requests.end(),
-        [request_id](const llama_rn_queued_request& req) {
-            return req.request_id == request_id;
-        });
-    if (pending_it != queue_requests.end()) {
-        queue_requests.erase(pending_it, queue_requests.end());
-        LOG_INFO("Request %d cancelled (was in pending queue)", request_id);
-        return;
+    // Notify subscribers of status change
+    bool has_subscribers = false;
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex);
+        has_subscribers = !status_subscribers.empty();
     }
-
-    LOG_WARNING("Request %d not found for cancellation", request_id);
+    if (has_subscribers) {
+        notify_status_change();
+    }
 }
 
 // Compute similarity between two token sequences (stub for Phase 3)
@@ -417,6 +470,8 @@ void llama_rn_slot_manager::process_pending_queue() {
                 // Assign state parameters
                 slot->load_state_path = request.load_state_path;
                 slot->save_state_path = request.save_state_path;
+                slot->save_prompt_state_path = request.save_prompt_state_path;
+                slot->load_state_size = request.load_state_size;
                 slot->save_state_size = request.save_state_size;
 
                 // Load state if provided
@@ -460,7 +515,8 @@ void llama_rn_slot_manager::process_pending_queue() {
                 slot->on_complete_callback = request.on_complete;
                 slot->current_chat_format = request.chat_format;
                 slot->current_reasoning_format = request.reasoning_format;
-                slot->current_thinking_forced_open = request.thinking_forced_open;
+                slot->current_generation_prompt = request.generation_prompt;
+                slot->current_chat_parser = request.chat_parser;
                 slot->prefill_text = request.prefill_text;
                 slot->n_remaining = request.params.n_predict;
                 slot->stop_words = request.params.antiprompt;
@@ -606,6 +662,15 @@ void llama_rn_slot_manager::build_batch() {
                     slot.prompt_tokens = slot.embd;
                     slot.num_prompt_tokens = slot.embd.size();
                     slot.media_processed = true;
+                    if (slot.save_prompt_state_pending) {
+                        llama_pos checkpoint_tokens = (llama_pos)slot.num_prompt_tokens;
+                        if (checkpoint_tokens > 1) {
+                            checkpoint_tokens -= 1;
+                        }
+                        slot.save_prompt_state_tokens = checkpoint_tokens;
+                        LOG_VERBOSE("Slot %d: Updated prompt checkpoint target to %lld/%zu tokens after media processing",
+                                   slot.id, (long long)slot.save_prompt_state_tokens, slot.num_prompt_tokens);
+                    }
 
                     // processMedia() fills ALL tokens into KV cache, so update n_past to match
                     // This prevents the while loop from re-adding tokens that are already in KV cache
@@ -642,7 +707,13 @@ void llama_rn_slot_manager::build_batch() {
             }
 
             // Process tokens up to n_batch limit (only for non-media slots)
-            while (slot.n_past < (llama_pos)slot.num_prompt_tokens && batch.n_tokens < n_batch) {
+            size_t prompt_end = slot.num_prompt_tokens;
+            if (slot.save_prompt_state_pending && slot.save_prompt_state_tokens >= 0 &&
+                slot.n_past <= slot.save_prompt_state_tokens) {
+                prompt_end = std::min(prompt_end, (size_t)slot.save_prompt_state_tokens);
+            }
+
+            while (slot.n_past < (llama_pos)prompt_end && batch.n_tokens < n_batch) {
                 llama_token token = slot.prompt_tokens[slot.n_past];
 
                 // Skip LLAMA_TOKEN_NULL - these are media placeholders already in KV cache
@@ -1046,6 +1117,31 @@ void llama_rn_slot_manager::update_slots() {
         }
     }
 
+    // Step 4.6: Save recurrent prompt checkpoints after decode (or if no decode needed)
+    {
+        std::lock_guard<std::mutex> lock(slots_mutex);
+        for (auto& slot : slots) {
+            if (!slot.save_prompt_state_pending || slot.save_prompt_state_tokens < 0) {
+                continue;
+            }
+
+            if (slot.n_decoded > 0) {
+                LOG_WARNING("Slot %d: Prompt checkpoint missed (generated tokens=%d), skipping",
+                           slot.id, slot.n_decoded);
+                slot.save_prompt_state_pending = false;
+                continue;
+            }
+
+            if (slot.n_past >= slot.save_prompt_state_tokens) {
+                const bool saved = slot.save_prompt_state_checkpoint();
+                slot.save_prompt_state_pending = false;
+                if (!saved) {
+                    LOG_WARNING("Slot %d: Failed to save prompt checkpoint", slot.id);
+                }
+            }
+        }
+    }
+
     // Step 5: Sample tokens and invoke callbacks for GENERATING slots (with mutex)
     {
         std::lock_guard<std::mutex> lock(slots_mutex);
@@ -1062,6 +1158,17 @@ void llama_rn_slot_manager::update_slots() {
     {
         std::lock_guard<std::mutex> lock(slots_mutex);
         process_pending_queue();
+    }
+
+    // Step 8: Notify subscribers of status change (outside of slots_mutex)
+    // Check if there are subscribers before calling notify
+    bool has_subscribers = false;
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex);
+        has_subscribers = !status_subscribers.empty();
+    }
+    if (has_subscribers) {
+        notify_status_change();
     }
 }
 
@@ -1129,6 +1236,118 @@ void llama_rn_slot_manager::stop_processing_loop() {
     }
 
     LOG_INFO("Processing loop stopped");
+}
+
+// Get current parallel status
+llama_rn_parallel_status llama_rn_slot_manager::get_status() {
+    std::lock_guard<std::mutex> lock(slots_mutex);
+
+    llama_rn_parallel_status status;
+    status.n_parallel = n_parallel;
+    status.active_slots = 0;
+    status.queued_requests = static_cast<int32_t>(queue_requests.size());
+
+    // Add active slot requests
+    for (const auto& slot : slots) {
+        if (slot.state != SLOT_STATE_IDLE && slot.state != SLOT_STATE_DONE) {
+            status.active_slots++;
+
+            llama_rn_request_status req_status;
+            req_status.request_id = slot.request_id;
+
+            // Map task type to string
+            switch (slot.task_type) {
+                case SLOT_TASK_TYPE_COMPLETION: req_status.type = "completion"; break;
+                case SLOT_TASK_TYPE_EMBEDDING: req_status.type = "embedding"; break;
+                case SLOT_TASK_TYPE_RERANK: req_status.type = "rerank"; break;
+            }
+
+            // Map state to string
+            switch (slot.state) {
+                case SLOT_STATE_IDLE: req_status.state = "idle"; break;
+                case SLOT_STATE_PROCESSING_PROMPT: req_status.state = "processing_prompt"; break;
+                case SLOT_STATE_GENERATING: req_status.state = "generating"; break;
+                case SLOT_STATE_DONE: req_status.state = "done"; break;
+            }
+
+            req_status.prompt_length = slot.num_prompt_tokens;
+            req_status.tokens_generated = slot.n_decoded;
+            req_status.prompt_ms = slot.t_prompt_processing * 1e3;
+            req_status.generation_ms = slot.t_token_generation * 1e3;
+            req_status.tokens_per_second = (slot.n_decoded > 0 && slot.t_token_generation > 0.0)
+                ? slot.n_decoded / slot.t_token_generation : 0.0;
+
+            status.requests.push_back(req_status);
+        }
+    }
+
+    // Add queued requests
+    for (const auto& queued : queue_requests) {
+        llama_rn_request_status req_status;
+        req_status.request_id = queued.request_id;
+
+        switch (queued.task_type) {
+            case SLOT_TASK_TYPE_COMPLETION: req_status.type = "completion"; break;
+            case SLOT_TASK_TYPE_EMBEDDING: req_status.type = "embedding"; break;
+            case SLOT_TASK_TYPE_RERANK: req_status.type = "rerank"; break;
+        }
+
+        req_status.state = "queued";
+        req_status.prompt_length = queued.prompt_tokens.size();
+        req_status.tokens_generated = 0;
+        req_status.prompt_ms = 0.0;
+        req_status.generation_ms = 0.0;
+        req_status.tokens_per_second = 0.0;
+
+        status.requests.push_back(req_status);
+    }
+
+    return status;
+}
+
+bool llama_rn_slot_manager::has_pending_work() {
+    std::lock_guard<std::mutex> lock(slots_mutex);
+
+    if (!queue_requests.empty()) {
+        return true;
+    }
+
+    for (const auto& slot : slots) {
+        if (slot.state != SLOT_STATE_IDLE && slot.state != SLOT_STATE_DONE) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Notify all subscribers of status change
+void llama_rn_slot_manager::notify_status_change() {
+    // Get status snapshot first (acquires slots_mutex inside)
+    llama_rn_parallel_status status = get_status();
+
+    std::lock_guard<std::mutex> lock(subscribers_mutex);
+    for (const auto& [id, callback] : status_subscribers) {
+        if (callback) {
+            callback(status);
+        }
+    }
+}
+
+// Add status subscriber
+int32_t llama_rn_slot_manager::add_status_subscriber(
+    std::function<void(const llama_rn_parallel_status&)> callback
+) {
+    std::lock_guard<std::mutex> lock(subscribers_mutex);
+    int32_t id = next_subscriber_id++;
+    status_subscribers[id] = callback;
+    return id;
+}
+
+// Remove status subscriber
+void llama_rn_slot_manager::remove_status_subscriber(int32_t subscriber_id) {
+    std::lock_guard<std::mutex> lock(subscribers_mutex);
+    status_subscribers.erase(subscriber_id);
 }
 
 } // namespace rnllama

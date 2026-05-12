@@ -19,6 +19,25 @@ namespace rnllama {
 struct llama_rn_context;
 struct completion_token_output;
 
+// Status structures for exposing slot manager state to JS
+struct llama_rn_request_status {
+    int32_t request_id;
+    std::string type;           // "completion", "embedding", "rerank"
+    std::string state;          // "queued", "processing_prompt", "generating", "done"
+    size_t prompt_length;
+    size_t tokens_generated;
+    double prompt_ms;
+    double generation_ms;
+    double tokens_per_second;
+};
+
+struct llama_rn_parallel_status {
+    int32_t n_parallel;
+    int32_t active_slots;
+    int32_t queued_requests;
+    std::vector<llama_rn_request_status> requests;
+};
+
 // Queued request structure
 struct llama_rn_queued_request {
     int32_t request_id;
@@ -35,7 +54,8 @@ struct llama_rn_queued_request {
     // Chat format parameters
     int chat_format;
     common_reasoning_format reasoning_format;
-    bool thinking_forced_open;
+    std::string generation_prompt;
+    std::string chat_parser;  // Serialized PEG parser for chat output parsing
 
     // Prefill text
     std::string prefill_text;
@@ -51,6 +71,8 @@ struct llama_rn_queued_request {
     // State management
     std::string load_state_path;       // File path to load state from before processing
     std::string save_state_path;       // File path to save state to after completion
+    std::string save_prompt_state_path; // File path to save prompt state to after prompt processing
+    int32_t load_state_size;           // Number of tokens to load (0 or -1 = all tokens)
     int32_t save_state_size;           // Number of tokens to save (0 or -1 = all tokens)
 
     llama_rn_queued_request() :
@@ -58,8 +80,8 @@ struct llama_rn_queued_request {
         task_type(SLOT_TASK_TYPE_COMPLETION),
         chat_format(0),
         reasoning_format(COMMON_REASONING_FORMAT_NONE),
-        thinking_forced_open(false),
         embd_normalize(-1),
+        load_state_size(-1),
         save_state_size(-1)
     {}
 };
@@ -94,6 +116,11 @@ struct llama_rn_slot_manager {
     std::thread processing_thread;         // Background processing thread
     std::atomic<bool> processing_active;   // Flag to control processing loop
 
+    // Status subscription support
+    std::map<int32_t, std::function<void(const llama_rn_parallel_status&)>> status_subscribers;
+    std::mutex subscribers_mutex;
+    int32_t next_subscriber_id = 1;
+
     // Constructor
     llama_rn_slot_manager(llama_rn_context* ctx);
 
@@ -111,10 +138,13 @@ struct llama_rn_slot_manager {
         const std::string& prompt_text,
         int chat_format,
         common_reasoning_format reasoning_format,
-        bool thinking_forced_open,
+        const std::string& generation_prompt,
+        const std::string& chat_parser,
         const std::string& prefill_text,
         const std::string& load_state_path,
         const std::string& save_state_path,
+        const std::string& save_prompt_state_path,
+        int32_t load_state_size,
         int32_t save_state_size,
         std::function<void(const completion_token_output&)> on_token,
         std::function<void(llama_rn_slot*)> on_complete
@@ -158,6 +188,13 @@ struct llama_rn_slot_manager {
 
     // Release completed slots
     void release_completed_slots();
+
+    // Status methods
+    llama_rn_parallel_status get_status();
+    bool has_pending_work();
+    void notify_status_change();
+    int32_t add_status_subscriber(std::function<void(const llama_rn_parallel_status&)> callback);
+    void remove_status_subscriber(int32_t subscriber_id);
 };
 
 } // namespace rnllama

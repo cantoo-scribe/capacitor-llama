@@ -36,7 +36,9 @@ file(GLOB GGML_METAL_M_FILES ${SOURCE_DIR}/ggml-metal/*.m)
 file(GLOB GGML_BLAS_FILES ${SOURCE_DIR}/ggml-blas/*.cpp)
 file(GLOB LLAMA_FILES ${SOURCE_DIR}/llama*.cpp)
 file(GLOB MTMD_FILES ${SOURCE_DIR}/tools/mtmd/*.cpp)
+file(GLOB MTMD_MODEL_FILES ${SOURCE_DIR}/tools/mtmd/models/*.cpp)
 file(GLOB COMMON_FILES ${SOURCE_DIR}/common/*.cpp)
+file(GLOB JINJA_FILES ${SOURCE_DIR}/common/jinja/*.cpp)
 
 if (CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
     set(SOURCE_FILES_ARCH
@@ -63,6 +65,8 @@ add_library(capllama SHARED
     ${SOURCE_DIR}/ggml.c
     ${SOURCE_DIR}/ggml-alloc.c
     ${SOURCE_DIR}/ggml-backend.cpp
+    ${SOURCE_DIR}/ggml-backend-dl.cpp
+    ${SOURCE_DIR}/ggml-backend-meta.cpp
     ${SOURCE_DIR}/ggml-backend-reg.cpp
     ${SOURCE_DIR}/ggml-opt.cpp
     ${SOURCE_DIR}/ggml-threading.cpp
@@ -91,15 +95,15 @@ add_library(capllama SHARED
 
     ${SOURCE_DIR}/anyascii.c
 
-    # Header-only libraries (needed for build)
-    ${SOURCE_DIR}/minja/minja.hpp
-    ${SOURCE_DIR}/minja/chat-template.hpp
-    ${SOURCE_DIR}/nlohmann/json.hpp
-    ${SOURCE_DIR}/nlohmann/json_fwd.hpp
+    # Jinja template engine
+    ${JINJA_FILES}
+
+    # Headers (needed for build)
     ${SOURCE_DIR}/common/chat.h
     ${SOURCE_DIR}/common/common.h
 
     # Multimodal support (globbed)
+    ${MTMD_MODEL_FILES}
     ${MTMD_FILES}
 
     # React Native llama APIs
@@ -121,10 +125,9 @@ target_include_directories(capllama
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/common>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/common/jinja>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/ggml-cpu>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/tools/mtmd>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/minja>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../cpp/nlohmann>
         $<INSTALL_INTERFACE:include>
 )
 

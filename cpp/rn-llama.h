@@ -59,10 +59,10 @@ struct llama_rn_context {
     float loading_progress = 0;
     bool is_load_interrupted = false;
     common_params params;
-    common_init_result llama_init;
+    common_init_result_ptr llama_init;
     llama_context *ctx = nullptr;
     common_chat_templates_ptr templates;
-    int n_ctx;
+    int n_ctx = 0;
 
     // Completion context (DEPRECATED: Use slot_manager for parallel decoding)
     llama_rn_context_completion *completion = nullptr;
@@ -94,9 +94,11 @@ struct llama_rn_context {
       const bool& parallel_tool_calls,
       const std::string& tool_choice,
       const bool& enable_thinking,
+      const std::string& reasoning_format,
       const bool& add_generation_prompt = true,
       const std::string& now_str = "",
-      const std::map<std::string, std::string>& chat_template_kwargs = {}
+      const std::map<std::string, std::string>& chat_template_kwargs = {},
+      const bool& force_pure_content = false
     ) const;
     std::string getFormattedChat(
       const std::string &messages,
@@ -106,14 +108,17 @@ struct llama_rn_context {
 
     // Lora methods
     std::vector<common_adapter_lora_info> lora;
-    int applyLoraAdapters(std::vector<common_adapter_lora_info> lora);
+    // Init-time adapters are owned by common_init_result. Runtime apply/remove
+    // operations load their own adapter handles and release them here.
+    std::vector<llama_adapter_lora_ptr> owned_lora;
+    void applyLoraAdapters(std::vector<common_adapter_lora_info> lora);
     void removeLoraAdapters();
     std::vector<common_adapter_lora_info> getLoadedLoraAdapters();
 
     // Multimodal fields and methods
     llama_rn_context_mtmd *mtmd_wrapper = nullptr;
     bool has_multimodal = false;
-    bool initMultimodal(const std::string &mmproj_path, bool use_gpu);
+    bool initMultimodal(const std::string &mmproj_path, bool use_gpu, int image_min_tokens = -1, int image_max_tokens = -1);
     bool isMultimodalEnabled() const;
     bool isMultimodalSupportVision() const;
     bool isMultimodalSupportAudio() const;

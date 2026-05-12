@@ -68,7 +68,7 @@ extern "C" {
     LM_GGML_API void                           lm_ggml_backend_buffer_reset         (lm_ggml_backend_buffer_t buffer);
 
     // tensor copy between different backends
-    LM_GGML_API void lm_ggml_backend_tensor_copy(struct lm_ggml_tensor * src, struct lm_ggml_tensor * dst);
+    LM_GGML_API void lm_ggml_backend_tensor_copy(const struct lm_ggml_tensor * src, struct lm_ggml_tensor * dst);
 
     //
     // Backend (stream)
@@ -83,13 +83,17 @@ extern "C" {
     LM_GGML_API size_t                     lm_ggml_backend_get_alignment(lm_ggml_backend_t backend);
     LM_GGML_API size_t                     lm_ggml_backend_get_max_size(lm_ggml_backend_t backend);
 
-    LM_GGML_API void lm_ggml_backend_tensor_set_async(lm_ggml_backend_t backend,       struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size);
-    LM_GGML_API void lm_ggml_backend_tensor_get_async(lm_ggml_backend_t backend, const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_set_async   (lm_ggml_backend_t backend,       struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_get_async   (lm_ggml_backend_t backend, const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_set_2d_async(lm_ggml_backend_t backend,       struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data);
+    LM_GGML_API void lm_ggml_backend_tensor_get_2d_async(lm_ggml_backend_t backend, const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data);
 
     // "offset" refers to the offset in tensor->data for setting/getting data
-    LM_GGML_API void lm_ggml_backend_tensor_set(      struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size);
-    LM_GGML_API void lm_ggml_backend_tensor_get(const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size);
-    LM_GGML_API void lm_ggml_backend_tensor_memset(   struct lm_ggml_tensor * tensor,     uint8_t value, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_set   (      struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_get   (const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size);
+    LM_GGML_API void lm_ggml_backend_tensor_set_2d(      struct lm_ggml_tensor * tensor, const void * data, size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data);
+    LM_GGML_API void lm_ggml_backend_tensor_get_2d(const struct lm_ggml_tensor * tensor,       void * data, size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data);
+    LM_GGML_API void lm_ggml_backend_tensor_memset(      struct lm_ggml_tensor * tensor,     uint8_t value, size_t offset, size_t size);
 
     LM_GGML_API void lm_ggml_backend_synchronize(lm_ggml_backend_t backend);
 
@@ -109,7 +113,7 @@ extern "C" {
     // the copy is performed after all the currently queued operations in backend_src
     // backend_dst will wait for the copy to complete before performing other operations
     // automatic fallback to sync copy if async is not supported
-    LM_GGML_API void lm_ggml_backend_tensor_copy_async(lm_ggml_backend_t backend_src, lm_ggml_backend_t backend_dst, struct lm_ggml_tensor * src, struct lm_ggml_tensor * dst);
+    LM_GGML_API void lm_ggml_backend_tensor_copy_async(lm_ggml_backend_t backend_src, lm_ggml_backend_t backend_dst, const struct lm_ggml_tensor * src, struct lm_ggml_tensor * dst);
 
     LM_GGML_API lm_ggml_backend_dev_t lm_ggml_backend_get_device(lm_ggml_backend_t backend);
 
@@ -135,7 +139,9 @@ extern "C" {
         // integrated GPU device using host memory
         LM_GGML_BACKEND_DEVICE_TYPE_IGPU,
         // accelerator devices intended to be used together with the CPU backend (e.g. BLAS or AMX)
-        LM_GGML_BACKEND_DEVICE_TYPE_ACCEL
+        LM_GGML_BACKEND_DEVICE_TYPE_ACCEL,
+        // "meta" device wrapping multiple other devices for tensor parallelism
+        LM_GGML_BACKEND_DEVICE_TYPE_META,
     };
 
     // functionality supported by the device
@@ -196,7 +202,12 @@ extern "C" {
 
     // Common functions that may be obtained using lm_ggml_backend_reg_get_proc_address
 
-    // Split buffer type for tensor parallelism
+    // Context management and operations for faster communication between backends, used for tensor parallelism (meta backend)
+    typedef void * (*lm_ggml_backend_comm_init_t)(lm_ggml_backend_t * backends, size_t n_backends);
+    typedef void   (*lm_ggml_backend_comm_free_t)(void * comm_ctx);
+    typedef bool   (*lm_ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct lm_ggml_tensor ** tensors);
+
+    // Split buffer type for tensor parallelism (old)
     typedef lm_ggml_backend_buffer_type_t   (*lm_ggml_backend_split_buffer_type_t)(int main_device, const float * tensor_split);
     // Set the number of threads for the backend
     typedef void                         (*lm_ggml_backend_set_n_threads_t)(lm_ggml_backend_t backend, int n_threads);
@@ -259,7 +270,7 @@ extern "C" {
       Example usage:
 
         // operations that use tensors allocated in a buffer with USAGE_WEIGHTS will be assigned
-        // preferrably to run on the same backend as the buffer
+        // preferably to run on the same backend as the buffer
         lm_ggml_backend_buffer_set_usage(buf_weights, LM_GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
         sched = lm_ggml_backend_sched_new({backend_gpu, backend_gpu2, backend_cpu}, NULL, num_backends, LM_GGML_DEFAULT_GRAPH_SIZE, false, true);
@@ -307,6 +318,7 @@ extern "C" {
     LM_GGML_API void                 lm_ggml_backend_sched_free(lm_ggml_backend_sched_t sched);
 
     // Initialize backend buffers from a measure graph
+    LM_GGML_API void                 lm_ggml_backend_sched_reserve_size(lm_ggml_backend_sched_t sched, struct lm_ggml_cgraph * measure_graph, size_t * sizes);
     LM_GGML_API bool                 lm_ggml_backend_sched_reserve(lm_ggml_backend_sched_t sched, struct lm_ggml_cgraph * measure_graph); // returns success
 
     LM_GGML_API int                  lm_ggml_backend_sched_get_n_backends(lm_ggml_backend_sched_t sched);
@@ -340,6 +352,53 @@ extern "C" {
     LM_GGML_API void                 lm_ggml_backend_sched_set_eval_callback(lm_ggml_backend_sched_t sched, lm_ggml_backend_sched_eval_callback callback, void * user_data);
 
     //
+    // Meta backend
+    //
+
+#define LM_GGML_BACKEND_META_MAX_DEVICES 16
+
+    enum lm_ggml_backend_meta_split_axis {
+        // tensor split by tensor dimensions:
+        LM_GGML_BACKEND_SPLIT_AXIS_0 = 0,
+        LM_GGML_BACKEND_SPLIT_AXIS_1 = 1,
+        LM_GGML_BACKEND_SPLIT_AXIS_2 = 2,
+        LM_GGML_BACKEND_SPLIT_AXIS_3 = 3,
+
+        LM_GGML_BACKEND_SPLIT_AXIS_MIRRORED = 10, // all values on all backends
+        LM_GGML_BACKEND_SPLIT_AXIS_PARTIAL  = 11, // each backend has a partial sum
+
+        // for internal bookkeeping only:
+        LM_GGML_BACKEND_SPLIT_AXIS_NONE    = 98,
+        LM_GGML_BACKEND_SPLIT_AXIS_UNKNOWN = 99,
+    };
+    LM_GGML_API const char * lm_ggml_backend_meta_split_axis_name(enum lm_ggml_backend_meta_split_axis split_axis);
+
+    struct lm_ggml_backend_meta_split_state {
+        enum lm_ggml_backend_meta_split_axis axis;
+
+        // for tensors with axis >= 0 && axis < LM_GGML_MAX_DIMS:
+        //   - each device has a slice of the tensor along the split axis
+        //   - most tensors have n_segments == 1 and a contiguous slice of the tensor data
+        //   - some tensors have an inhomogenenous data layout along the split axis,
+        //     those tensors are divided into segments which are each individually split across devices
+        //   - ne has one entry per segment and device that add up to lm_ggml_tensor::ne for that axis,
+        //     the outer/inner loops are over segments/devices like [seg0_dev0, seg0_dev1, seg1_dev0, seg1_dev1],
+        //   - for example, a transformer may have a fused QKV matrix rather than 3 matrices, those would be 3 separate segments
+        //     that each need to be split individually across devices so that each device gets a slice of Q, K, and V
+        int64_t  ne[16*LM_GGML_BACKEND_META_MAX_DEVICES];
+        uint32_t n_segments;
+    };
+
+    // function to assign split states for statically allocated tensors, compute tensor split states will be assigned to be compatible:
+    typedef struct lm_ggml_backend_meta_split_state(*lm_ggml_backend_meta_get_split_state_t)(const struct lm_ggml_tensor * tensor, void * userdata);
+
+    // create a new meta device from "simple" devices, meta buffer type/buffer/backend is then derived from this:
+    // TODO: this looks a bit strange - a backend API creates a device. I think we should try
+    //       express this as a backend registry functionality instead
+    LM_GGML_API lm_ggml_backend_dev_t lm_ggml_backend_meta_device(
+        lm_ggml_backend_dev_t * devs, size_t n_devs, lm_ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
+
+    //
     // Utils
     //
 
@@ -357,7 +416,7 @@ extern "C" {
     typedef bool (*lm_ggml_backend_eval_callback)(int node_index, struct lm_ggml_tensor * t1, struct lm_ggml_tensor * t2, void * user_data);
 
     // Compare the output of two backends
-    LM_GGML_API bool lm_ggml_backend_compare_graph_backend(lm_ggml_backend_t backend1, lm_ggml_backend_t backend2, struct lm_ggml_cgraph * graph, lm_ggml_backend_eval_callback callback, void * user_data, struct lm_ggml_tensor * test_node);
+    LM_GGML_API bool lm_ggml_backend_compare_graph_backend(lm_ggml_backend_t backend1, lm_ggml_backend_t backend2, struct lm_ggml_cgraph * graph, lm_ggml_backend_eval_callback callback, void * user_data, struct lm_ggml_tensor const * const * test_nodes, size_t num_test_nodes);
 
     // Tensor initialization
     LM_GGML_API enum lm_ggml_status lm_ggml_backend_tensor_alloc(lm_ggml_backend_buffer_t buffer, struct lm_ggml_tensor * tensor, void * addr);

@@ -24,9 +24,6 @@
 static const NSInteger MTLGPUFamilyMetal3_GGML = 5001;
 static const NSInteger MTLGPUFamilyMetal4_GGML = 5002;
 
-// virtual address for GPU memory allocations
-static atomic_uintptr_t g_addr_device = 0x000000400ULL;
-
 #if !LM_GGML_METAL_EMBED_LIBRARY
 // Here to assist with NSBundle Path Hack
 @interface LMGGMLMetalClass : NSObject
@@ -349,10 +346,12 @@ struct lm_ggml_metal_pipeline_with_params lm_ggml_metal_library_get_pipeline(lm_
 
     struct lm_ggml_metal_pipeline_with_params res = {
         /*.pipeline =*/ nil,
+        /*.nsg      =*/ 0,
         /*.nr0      =*/ 0,
         /*.nr1      =*/ 0,
-        /*.nsg      =*/ 0,
         /*.smem     =*/ 0,
+        /*.c4       =*/ false,
+        /*.cnt      =*/ false,
     };
 
     res.pipeline = lm_ggml_metal_pipelines_get(lib->pipelines, name);
@@ -365,10 +364,12 @@ struct lm_ggml_metal_pipeline_with_params lm_ggml_metal_library_get_pipeline(lm_
 struct lm_ggml_metal_pipeline_with_params lm_ggml_metal_library_compile_pipeline(lm_ggml_metal_library_t lib, const char * base, const char * name, lm_ggml_metal_cv_t cv) {
     struct lm_ggml_metal_pipeline_with_params res = {
         /*.pipeline =*/ nil,
+        /*.nsg      =*/ 0,
         /*.nr0      =*/ 0,
         /*.nr1      =*/ 0,
-        /*.nsg      =*/ 0,
         /*.smem     =*/ 0,
+        /*.c4       =*/ false,
+        /*.cnt      =*/ false,
     };
 
     [lib->lock lock];
@@ -523,6 +524,9 @@ struct lm_ggml_metal_device {
     lm_ggml_metal_library_t library;
 
     struct lm_ggml_metal_device_props props;
+
+    // virtual address for GPU memory allocations
+    atomic_uintptr_t addr_virt;
 };
 
 //
@@ -618,7 +622,7 @@ void lm_ggml_metal_rsets_free(lm_ggml_metal_rsets_t rsets) {
     free(rsets);
 }
 
-lm_ggml_metal_device_t lm_ggml_metal_device_init(void) {
+lm_ggml_metal_device_t lm_ggml_metal_device_init(int device) {
     lm_ggml_metal_device_t dev = calloc(1, sizeof(struct lm_ggml_metal_device));
 
     assert(dev != NULL);
@@ -632,6 +636,9 @@ lm_ggml_metal_device_t lm_ggml_metal_device_init(void) {
                 LM_GGML_LOG_ERROR("%s: error: failed to create command queue\n", __func__);
             }
 
+            dev->addr_virt = 0x000000400ULL;
+
+            dev->props.device = device;
             dev->props.has_simdgroup_reduction  = [dev->mtl_device supportsFamily:MTLGPUFamilyApple7];
             dev->props.has_simdgroup_reduction |= [dev->mtl_device supportsFamily:MTLGPUFamilyMetal3_GGML];
 
@@ -683,7 +690,7 @@ lm_ggml_metal_device_t lm_ggml_metal_device_init(void) {
                     "    auto tB = B.slice((int)tgid.x, 0); \n"
                     " \n"
                     "    matmul2d< \n"
-                    "        matmul2d_descriptor(8, 8, dynamic_extent), \n"
+                    "        matmul2d_descriptor(16, 16, dynamic_extent), \n"
                     "        execution_simdgroups<4>> mm; \n"
                     " \n"
                     "    auto cT = mm.get_destination_cooperative_tensor<decltype(tA), decltype(tB), float>(); \n"
@@ -733,7 +740,7 @@ lm_ggml_metal_device_t lm_ggml_metal_device_init(void) {
                     "    auto tB = B.slice((int)tgid.x, 0); \n"
                     " \n"
                     "    matmul2d< \n"
-                    "        matmul2d_descriptor(8, 8, dynamic_extent), \n"
+                    "        matmul2d_descriptor(16, 16, dynamic_extent), \n"
                     "        execution_simdgroups<4>> mm; \n"
                     " \n"
                     "    auto cT = mm.get_destination_cooperative_tensor<decltype(tA), decltype(tB), float>(); \n"
@@ -769,17 +776,31 @@ lm_ggml_metal_device_t lm_ggml_metal_device_init(void) {
 #endif
 
             dev->props.use_shared_buffers = dev->props.has_unified_memory;
+#if TARGET_OS_OSX
+            // In case of eGPU, shared memory may be preferable.
+            dev->props.use_shared_buffers |= [dev->mtl_device location] == MTLDeviceLocationExternal;
+#endif
             if (getenv("LM_GGML_METAL_SHARED_BUFFERS_DISABLE") != NULL) {
                 dev->props.use_shared_buffers = false;
+            }
+            if (getenv("LM_GGML_METAL_SHARED_BUFFERS_ENABLE") != NULL) {
+                dev->props.use_shared_buffers = true;
             }
 
             dev->props.supports_gpu_family_apple7 = [dev->mtl_device supportsFamily:MTLGPUFamilyApple7];
 
-            dev->props.max_buffer_size            = dev->mtl_device.maxBufferLength;
-            dev->props.max_working_set_size       = dev->mtl_device.recommendedMaxWorkingSetSize;
-            dev->props.max_theadgroup_memory_size = dev->mtl_device.maxThreadgroupMemoryLength;
+            dev->props.op_offload_min_batch_size  = getenv("LM_GGML_OP_OFFLOAD_MIN_BATCH") ? atoi(getenv("LM_GGML_OP_OFFLOAD_MIN_BATCH")) : 32;
 
-            strncpy(dev->props.name, [[dev->mtl_device name] UTF8String], sizeof(dev->props.name) - 1);
+            dev->props.max_buffer_size            = dev->mtl_device.maxBufferLength;
+            dev->props.max_theadgroup_memory_size = dev->mtl_device.maxThreadgroupMemoryLength;
+            if (@available(macOS 10.12, iOS 16.0, *)) {
+                dev->props.max_working_set_size   = dev->mtl_device.recommendedMaxWorkingSetSize;
+            } else {
+                dev->props.max_working_set_size   = dev->mtl_device.maxBufferLength;
+            }
+
+            snprintf(dev->props.name, sizeof(dev->props.name), "%s%d", "MTL", device);
+            snprintf(dev->props.desc, sizeof(dev->props.desc), "%s", [[dev->mtl_device name] UTF8String]);
 
             dev->library = lm_ggml_metal_library_init(dev);
             if (!dev->library) {
@@ -909,6 +930,59 @@ void lm_ggml_metal_device_rsets_keep_alive(lm_ggml_metal_device_t dev) {
     atomic_store_explicit(&dev->rsets->d_loop, 2*dev->rsets->keep_alive_s, memory_order_relaxed);
 }
 
+struct lm_ggml_metal_event {
+    void * obj; // id<MTLEvent>
+
+    atomic_int value;
+};
+
+void lm_ggml_metal_event_encode_signal(lm_ggml_metal_event_t ev, lm_ggml_metal_cmd_buf_t cmd_buf_raw) {
+    id<MTLEvent> event = (id<MTLEvent>)ev->obj;
+
+    id<MTLCommandBuffer> cmd_buf = (id<MTLCommandBuffer>) cmd_buf_raw;
+
+    [cmd_buf encodeSignalEvent:event value:atomic_fetch_add_explicit(&ev->value, 1, memory_order_relaxed) + 1];
+}
+
+void lm_ggml_metal_event_encode_wait(lm_ggml_metal_event_t ev, lm_ggml_metal_cmd_buf_t cmd_buf_raw) {
+    id<MTLEvent> event = (id<MTLEvent>)ev->obj;
+
+    id<MTLCommandBuffer> cmd_buf = (id<MTLCommandBuffer>) cmd_buf_raw;
+
+    [cmd_buf encodeWaitForEvent:event value:atomic_load_explicit(&ev->value, memory_order_relaxed)];
+}
+
+lm_ggml_metal_event_t lm_ggml_metal_device_event_init(lm_ggml_metal_device_t dev) {
+    id<MTLEvent> event = [dev->mtl_device newEvent];
+
+    lm_ggml_metal_event_t ev = calloc(1, sizeof(struct lm_ggml_metal_event));
+
+    ev->obj = (__bridge void *)event;
+    ev->value = 0;
+
+    return ev;
+}
+
+void lm_ggml_metal_device_event_free(lm_ggml_metal_device_t dev, lm_ggml_metal_event_t ev) {
+    id<MTLEvent> event = ev->obj;
+    [event release];
+
+    free(ev);
+
+    LM_GGML_UNUSED(dev);
+}
+
+void lm_ggml_metal_device_event_synchronize(lm_ggml_metal_device_t dev, lm_ggml_metal_event_t ev) {
+    @autoreleasepool {
+        id<MTLEvent> event = ev->obj;
+
+        id<MTLCommandBuffer> cmd_buf = [dev->mtl_queue commandBuffer];
+        [cmd_buf encodeWaitForEvent:event value:atomic_load_explicit(&ev->value, memory_order_relaxed)];
+        [cmd_buf commit];
+        [cmd_buf waitUntilCompleted];
+    }
+}
+
 void lm_ggml_metal_device_get_memory(lm_ggml_metal_device_t dev, size_t * free, size_t * total) {
     if (@available(macOS 10.12, iOS 16.0, *)) {
         *total = dev->mtl_device.recommendedMaxWorkingSetSize;
@@ -937,6 +1011,15 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
     }
 
     switch (op->op) {
+        case LM_GGML_OP_SCALE:
+        case LM_GGML_OP_FILL:
+        case LM_GGML_OP_CLAMP:
+        case LM_GGML_OP_SQR:
+        case LM_GGML_OP_SQRT:
+        case LM_GGML_OP_SIN:
+        case LM_GGML_OP_COS:
+        case LM_GGML_OP_LOG:
+            return lm_ggml_is_contiguous_rows(op->src[0]) && (op->src[0]->type == LM_GGML_TYPE_F32 || op->src[0]->type == LM_GGML_TYPE_F16);
         case LM_GGML_OP_UNARY:
             switch (lm_ggml_get_unary_op(op)) {
                 case LM_GGML_UNARY_OP_TANH:
@@ -956,7 +1039,12 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                 case LM_GGML_UNARY_OP_EXP:
                 case LM_GGML_UNARY_OP_SOFTPLUS:
                 case LM_GGML_UNARY_OP_EXPM1:
-                    return lm_ggml_is_contiguous(op->src[0]) && op->src[0]->type == LM_GGML_TYPE_F32;
+                case LM_GGML_UNARY_OP_FLOOR:
+                case LM_GGML_UNARY_OP_CEIL:
+                case LM_GGML_UNARY_OP_ROUND:
+                case LM_GGML_UNARY_OP_TRUNC:
+                case LM_GGML_UNARY_OP_XIELU:
+                    return lm_ggml_is_contiguous_rows(op->src[0]) && (op->src[0]->type == LM_GGML_TYPE_F32 || op->src[0]->type == LM_GGML_TYPE_F16);
                 default:
                     return false;
             }
@@ -984,11 +1072,9 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
         case LM_GGML_OP_MUL:
         case LM_GGML_OP_DIV:
         case LM_GGML_OP_ADD_ID:
-            return op->src[0]->type == LM_GGML_TYPE_F32;
         case LM_GGML_OP_ACC:
+            return lm_ggml_is_contiguous_rows(op->src[0]) && lm_ggml_is_contiguous_rows(op->src[1]) && op->src[0]->type == LM_GGML_TYPE_F32;
         case LM_GGML_OP_REPEAT:
-        case LM_GGML_OP_SCALE:
-        case LM_GGML_OP_FILL:
         case LM_GGML_OP_CONV_TRANSPOSE_1D:
             return true;
         case LM_GGML_OP_CONV_TRANSPOSE_2D:
@@ -996,14 +1082,11 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                 (op->src[0]->type == LM_GGML_TYPE_F16 || op->src[0]->type == LM_GGML_TYPE_F32) &&
                 op->src[1]->type == LM_GGML_TYPE_F32 &&
                 op->type == LM_GGML_TYPE_F32;
-        case LM_GGML_OP_CLAMP:
-            return op->src[0]->type == LM_GGML_TYPE_F32;
-        case LM_GGML_OP_SQR:
-        case LM_GGML_OP_SQRT:
-        case LM_GGML_OP_SIN:
-        case LM_GGML_OP_COS:
-        case LM_GGML_OP_LOG:
-            return lm_ggml_is_contiguous(op->src[0]) && op->src[0]->type == LM_GGML_TYPE_F32;
+        case LM_GGML_OP_CONV_3D:
+            return lm_ggml_is_contiguous(op->src[0]) &&
+                   lm_ggml_is_contiguous(op->src[1]) &&
+                   (op->src[0]->type == LM_GGML_TYPE_F16 || op->src[0]->type == LM_GGML_TYPE_F32) &&
+                   op->src[1]->type == LM_GGML_TYPE_F32;
         case LM_GGML_OP_SUM:
             return has_simdgroup_reduction && lm_ggml_is_contiguous(op->src[0]);
         case LM_GGML_OP_TRI:
@@ -1013,9 +1096,13 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
         case LM_GGML_OP_MEAN:
         case LM_GGML_OP_SOFT_MAX:
         case LM_GGML_OP_GROUP_NORM:
-            return has_simdgroup_reduction && lm_ggml_is_contiguous_rows(op->src[0]);
         case LM_GGML_OP_L2_NORM:
-            return has_simdgroup_reduction && (op->ne[0] % 4 == 0 && lm_ggml_is_contiguous_1(op->src[0]));
+            return has_simdgroup_reduction && lm_ggml_is_contiguous_rows(op->src[0]);
+        case LM_GGML_OP_COUNT_EQUAL:
+            return has_simdgroup_reduction &&
+                op->src[0]->type == LM_GGML_TYPE_I32 &&
+                op->src[1]->type == LM_GGML_TYPE_I32 &&
+                op->type == LM_GGML_TYPE_I64;
         case LM_GGML_OP_ARGMAX:
             return has_simdgroup_reduction;
         case LM_GGML_OP_NORM:
@@ -1030,10 +1117,10 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                    op->src[1]->type == LM_GGML_TYPE_F32 &&
                    op->type == LM_GGML_TYPE_F32 &&
                    (op->src[0]->type == LM_GGML_TYPE_F16 || op->src[0]->type == LM_GGML_TYPE_F32);
-        case LM_GGML_OP_POOL_1D:
-            return false;
         case LM_GGML_OP_UPSCALE:
-            return op->src[0]->type == LM_GGML_TYPE_F32 && op->op_params[0] == LM_GGML_SCALE_MODE_NEAREST && !(op->op_params[0] & LM_GGML_SCALE_FLAG_ANTIALIAS);
+            return op->src[0]->type == LM_GGML_TYPE_F32;
+        case LM_GGML_OP_POOL_1D:
+            return lm_ggml_is_contiguous(op->src[0]) && op->src[0]->type == LM_GGML_TYPE_F32;
         case LM_GGML_OP_POOL_2D:
             return op->src[0]->type == LM_GGML_TYPE_F32;
         case LM_GGML_OP_PAD:
@@ -1051,6 +1138,7 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
         case LM_GGML_OP_ARGSORT:
         case LM_GGML_OP_TOP_K:
         case LM_GGML_OP_ARANGE:
+        case LM_GGML_OP_ROLL:
             return true;
         case LM_GGML_OP_FLASH_ATTN_EXT:
             // for new head sizes, add checks here
@@ -1064,16 +1152,31 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                 op->src[0]->ne[0] != 112 &&
                 op->src[0]->ne[0] != 128 &&
                 op->src[0]->ne[0] != 192 &&
-                op->src[0]->ne[0] != 256) {
-                return false;
-            }
-            if (op->src[0]->ne[0] == 576) {
-                // DeepSeek sizes
-                // TODO: disabled for now, until optmized
+                op->src[0]->ne[0] != 256 &&
+                op->src[0]->ne[0] != 320 &&
+                op->src[0]->ne[0] != 512 &&
+                op->src[0]->ne[0] != 576) {
                 return false;
             }
             if (op->src[1]->type != op->src[2]->type) {
                 return false;
+            }
+            switch (op->src[1]->type) {
+                case LM_GGML_TYPE_F32:
+                case LM_GGML_TYPE_F16:
+                case LM_GGML_TYPE_Q8_0:
+                case LM_GGML_TYPE_Q4_0:
+                case LM_GGML_TYPE_Q4_1:
+                case LM_GGML_TYPE_Q5_0:
+                case LM_GGML_TYPE_Q5_1:
+                    break;
+                case LM_GGML_TYPE_BF16:
+                    if (!has_bfloat) {
+                        return false;
+                    }
+                    break;
+                default:
+                    return false;
             }
             return has_simdgroup_mm; // TODO: over-restricted for vec-kernels
         case LM_GGML_OP_SSM_CONV:
@@ -1082,9 +1185,13 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
         case LM_GGML_OP_RWKV_WKV6:
         case LM_GGML_OP_RWKV_WKV7:
             return true;
+        case LM_GGML_OP_GATED_DELTA_NET:
+            return has_simdgroup_reduction && op->src[2]->ne[0] % 32 == 0;
+        case LM_GGML_OP_SOLVE_TRI:
         case LM_GGML_OP_MUL_MAT:
         case LM_GGML_OP_MUL_MAT_ID:
-            return has_simdgroup_reduction;
+            return has_simdgroup_reduction && op->src[0]->type != LM_GGML_TYPE_NVFP4;
+        case LM_GGML_OP_SET:
         case LM_GGML_OP_CPY:
         case LM_GGML_OP_DUP:
         case LM_GGML_OP_CONT:
@@ -1096,6 +1203,7 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                            case LM_GGML_TYPE_F16:
                            case LM_GGML_TYPE_BF16:
                            case LM_GGML_TYPE_Q8_0:
+                           case LM_GGML_TYPE_Q1_0:
                            case LM_GGML_TYPE_Q4_0:
                            case LM_GGML_TYPE_Q4_1:
                            case LM_GGML_TYPE_Q5_0:
@@ -1122,6 +1230,7 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                             default:
                                 return false;
                         }
+                    case LM_GGML_TYPE_Q1_0:
                     case LM_GGML_TYPE_Q4_0:
                     case LM_GGML_TYPE_Q4_1:
                     case LM_GGML_TYPE_Q5_0:
@@ -1141,7 +1250,7 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                 };
             }
         case LM_GGML_OP_GET_ROWS:
-            return true;
+            return op->src[0]->type != LM_GGML_TYPE_NVFP4;
         case LM_GGML_OP_SET_ROWS:
             {
                 if (op->src[0]->type != LM_GGML_TYPE_F32) {
@@ -1163,6 +1272,8 @@ bool lm_ggml_metal_device_supports_op(lm_ggml_metal_device_t dev, const struct l
                         return false;
                 };
             }
+        case LM_GGML_OP_DIAG:
+            return true;
         case LM_GGML_OP_OPT_STEP_ADAMW:
         case LM_GGML_OP_OPT_STEP_SGD:
             return has_simdgroup_reduction;
@@ -1204,7 +1315,7 @@ struct lm_ggml_metal_buffer {
     bool use_residency_sets;
 
     // optional MTLResidencySet
-    // note: cannot use explicity "id<MTLResidencySet>" here because it is not available on certain OSes
+    // note: cannot use explicitly "id<MTLResidencySet>" here because it is not available on certain OSes
     id rset;
 
     // pointers to global device
@@ -1330,8 +1441,8 @@ lm_ggml_metal_buffer_t lm_ggml_metal_buffer_init(lm_ggml_metal_device_t dev, siz
         res->all_data = lm_ggml_metal_host_malloc(size_aligned);
         res->is_shared = true;
     } else {
-        // use virtual address from g_addr_device counter
-        res->all_data = (void *) atomic_fetch_add_explicit(&g_addr_device, size_aligned, memory_order_relaxed);
+        // use virtual address
+        res->all_data = (void *) atomic_fetch_add_explicit(&dev->addr_virt, size_aligned, memory_order_relaxed);
         res->is_shared = false;
     }
     res->all_size = size_aligned;

@@ -92,7 +92,8 @@ struct llama_rn_slot {
     // Chat parsing state
     int current_chat_format;
     common_reasoning_format current_reasoning_format;
-    bool current_thinking_forced_open;
+    std::string current_generation_prompt;
+    std::string current_chat_parser;  // Serialized PEG parser for chat output parsing
 
     // Sampling context (per-slot)
     common_params* params;
@@ -134,7 +135,11 @@ struct llama_rn_slot {
     // State management (per-slot)
     std::string load_state_path;      // Path to load state from before processing
     std::string save_state_path;      // Path to save state to after completion
+    std::string save_prompt_state_path; // Path to save prompt state to after prompt processing
+    int32_t load_state_size;          // Number of tokens to load (0 or -1 = all tokens)
     int32_t save_state_size;          // Number of tokens to save (0 or -1 = all tokens)
+    bool save_prompt_state_pending;   // Save prompt checkpoint before generation
+    llama_pos save_prompt_state_tokens; // Prompt token count to save
 
     // Constructor
     llama_rn_slot();
@@ -155,6 +160,7 @@ struct llama_rn_slot {
     // State methods
     bool load_state();             // Load state into this slot's sequence
     bool save_state();             // Save state from this slot's sequence
+    bool save_prompt_state_checkpoint();  // Save prompt checkpoint
 };
 
 } // namespace rnllama

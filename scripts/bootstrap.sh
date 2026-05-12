@@ -172,6 +172,7 @@ cp ./$LLAMA_DIR/ggml/src/ggml-cpu/binary-ops.cpp ./cpp/ggml-cpu/binary-ops.cpp
 cp ./$LLAMA_DIR/ggml/src/ggml-cpu/vec.h ./cpp/ggml-cpu/vec.h
 cp ./$LLAMA_DIR/ggml/src/ggml-cpu/vec.cpp ./cpp/ggml-cpu/vec.cpp
 cp ./$LLAMA_DIR/ggml/src/ggml-cpu/simd-mappings.h ./cpp/ggml-cpu/simd-mappings.h
+cp ./$LLAMA_DIR/ggml/src/ggml-cpu/simd-gemm.h ./cpp/ggml-cpu/simd-gemm.h
 cp ./$LLAMA_DIR/ggml/src/ggml-cpu/ops.h ./cpp/ggml-cpu/ops.h
 cp ./$LLAMA_DIR/ggml/src/ggml-cpu/ops.cpp ./cpp/ggml-cpu/ops.cpp
 
@@ -186,6 +187,9 @@ cp ./$LLAMA_DIR/ggml/src/ggml-alloc.c ./cpp/ggml-alloc.c
 cp ./$LLAMA_DIR/ggml/src/ggml-backend.cpp ./cpp/ggml-backend.cpp
 cp ./$LLAMA_DIR/ggml/src/ggml-backend-impl.h ./cpp/ggml-backend-impl.h
 cp ./$LLAMA_DIR/ggml/src/ggml-backend-reg.cpp ./cpp/ggml-backend-reg.cpp
+cp ./$LLAMA_DIR/ggml/src/ggml-backend-meta.cpp ./cpp/ggml-backend-meta.cpp
+cp ./$LLAMA_DIR/ggml/src/ggml-backend-dl.h ./cpp/ggml-backend-dl.h
+cp ./$LLAMA_DIR/ggml/src/ggml-backend-dl.cpp ./cpp/ggml-backend-dl.cpp
 cp ./$LLAMA_DIR/ggml/src/ggml-common.h ./cpp/ggml-common.h
 cp ./$LLAMA_DIR/ggml/src/ggml-opt.cpp ./cpp/ggml-opt.cpp
 cp ./$LLAMA_DIR/ggml/src/ggml-quants.h ./cpp/ggml-quants.h
@@ -219,6 +223,8 @@ cp ./$LLAMA_DIR/src/llama-kv-cache-iswa.h ./cpp/llama-kv-cache-iswa.h
 cp ./$LLAMA_DIR/src/llama-kv-cache-iswa.cpp ./cpp/llama-kv-cache-iswa.cpp
 cp ./$LLAMA_DIR/src/llama-memory-hybrid.h ./cpp/llama-memory-hybrid.h
 cp ./$LLAMA_DIR/src/llama-memory-hybrid.cpp ./cpp/llama-memory-hybrid.cpp
+cp ./$LLAMA_DIR/src/llama-memory-hybrid-iswa.h ./cpp/llama-memory-hybrid-iswa.h
+cp ./$LLAMA_DIR/src/llama-memory-hybrid-iswa.cpp ./cpp/llama-memory-hybrid-iswa.cpp
 cp ./$LLAMA_DIR/src/llama-memory-recurrent.h ./cpp/llama-memory-recurrent.h
 cp ./$LLAMA_DIR/src/llama-memory-recurrent.cpp ./cpp/llama-memory-recurrent.cpp
 cp ./$LLAMA_DIR/src/llama-adapter.h ./cpp/llama-adapter.h
@@ -233,13 +239,14 @@ cp ./$LLAMA_DIR/src/llama-hparams.h ./cpp/llama-hparams.h
 cp ./$LLAMA_DIR/src/llama-hparams.cpp ./cpp/llama-hparams.cpp
 cp ./$LLAMA_DIR/src/llama-impl.h ./cpp/llama-impl.h
 cp ./$LLAMA_DIR/src/llama-impl.cpp ./cpp/llama-impl.cpp
+cp ./$LLAMA_DIR/src/llama-ext.h ./cpp/llama-ext.h
 
 cp ./$LLAMA_DIR/src/llama-vocab.h ./cpp/llama-vocab.h
 cp ./$LLAMA_DIR/src/llama-vocab.cpp ./cpp/llama-vocab.cpp
 cp ./$LLAMA_DIR/src/llama-grammar.h ./cpp/llama-grammar.h
 cp ./$LLAMA_DIR/src/llama-grammar.cpp ./cpp/llama-grammar.cpp
-cp ./$LLAMA_DIR/src/llama-sampling.h ./cpp/llama-sampling.h
-cp ./$LLAMA_DIR/src/llama-sampling.cpp ./cpp/llama-sampling.cpp
+cp ./$LLAMA_DIR/src/llama-sampler.h ./cpp/llama-sampler.h
+cp ./$LLAMA_DIR/src/llama-sampler.cpp ./cpp/llama-sampler.cpp
 
 cp ./$LLAMA_DIR/src/unicode.h ./cpp/unicode.h
 cp ./$LLAMA_DIR/src/unicode.cpp ./cpp/unicode.cpp
@@ -268,33 +275,54 @@ cp ./$LLAMA_DIR/common/regex-partial.h ./cpp/common/regex-partial.h
 cp ./$LLAMA_DIR/common/regex-partial.cpp ./cpp/common/regex-partial.cpp
 cp ./$LLAMA_DIR/common/chat.h ./cpp/common/chat.h
 cp ./$LLAMA_DIR/common/chat.cpp ./cpp/common/chat.cpp
-cp ./$LLAMA_DIR/common/chat-parser.h ./cpp/common/chat-parser.h
-cp ./$LLAMA_DIR/common/chat-parser.cpp ./cpp/common/chat-parser.cpp
-cp ./$LLAMA_DIR/common/chat-parser-xml-toolcall.h ./cpp/common/chat-parser-xml-toolcall.h
-cp ./$LLAMA_DIR/common/chat-parser-xml-toolcall.cpp ./cpp/common/chat-parser-xml-toolcall.cpp
+cp ./$LLAMA_DIR/common/chat-auto-parser.h ./cpp/common/chat-auto-parser.h
+cp ./$LLAMA_DIR/common/chat-auto-parser-helpers.h ./cpp/common/chat-auto-parser-helpers.h
+cp ./$LLAMA_DIR/common/chat-auto-parser-helpers.cpp ./cpp/common/chat-auto-parser-helpers.cpp
+cp ./$LLAMA_DIR/common/chat-auto-parser-generator.cpp ./cpp/common/chat-auto-parser-generator.cpp
+cp ./$LLAMA_DIR/common/chat-diff-analyzer.cpp ./cpp/common/chat-diff-analyzer.cpp
 cp ./$LLAMA_DIR/common/chat-peg-parser.h ./cpp/common/chat-peg-parser.h
 cp ./$LLAMA_DIR/common/chat-peg-parser.cpp ./cpp/common/chat-peg-parser.cpp
 cp ./$LLAMA_DIR/common/peg-parser.h ./cpp/common/peg-parser.h
 cp ./$LLAMA_DIR/common/peg-parser.cpp ./cpp/common/peg-parser.cpp
 cp ./$LLAMA_DIR/common/unicode.h ./cpp/common/unicode.h
 cp ./$LLAMA_DIR/common/unicode.cpp ./cpp/common/unicode.cpp
+cp ./$LLAMA_DIR/common/reasoning-budget.h ./cpp/common/reasoning-budget.h
+cp ./$LLAMA_DIR/common/reasoning-budget.cpp ./cpp/common/reasoning-budget.cpp
 
 # Copy multimodal files from tools/mtmd
 rm -rf ./cpp/tools/mtmd
 mkdir -p ./cpp/tools/mtmd
+cp -r ./$LLAMA_DIR/tools/mtmd/models ./cpp/tools/mtmd/models
+cp -r ./$LLAMA_DIR/tools/mtmd/debug ./cpp/tools/mtmd/debug
 cp ./$LLAMA_DIR/tools/mtmd/mtmd.h ./cpp/tools/mtmd/mtmd.h
 cp ./$LLAMA_DIR/tools/mtmd/mtmd.cpp ./cpp/tools/mtmd/mtmd.cpp
 cp ./$LLAMA_DIR/tools/mtmd/clip.h ./cpp/tools/mtmd/clip.h
 cp ./$LLAMA_DIR/tools/mtmd/clip.cpp ./cpp/tools/mtmd/clip.cpp
 cp ./$LLAMA_DIR/tools/mtmd/clip-impl.h ./cpp/tools/mtmd/clip-impl.h
+cp ./$LLAMA_DIR/tools/mtmd/clip-model.h ./cpp/tools/mtmd/clip-model.h
+cp ./$LLAMA_DIR/tools/mtmd/clip-graph.h ./cpp/tools/mtmd/clip-graph.h
 cp ./$LLAMA_DIR/tools/mtmd/mtmd-helper.cpp ./cpp/tools/mtmd/mtmd-helper.cpp
 cp ./$LLAMA_DIR/tools/mtmd/mtmd-helper.h ./cpp/tools/mtmd/mtmd-helper.h
 cp ./$LLAMA_DIR/tools/mtmd/mtmd-audio.h ./cpp/tools/mtmd/mtmd-audio.h
 cp ./$LLAMA_DIR/tools/mtmd/mtmd-audio.cpp ./cpp/tools/mtmd/mtmd-audio.cpp
+cp ./$LLAMA_DIR/tools/mtmd/mtmd-image.h ./cpp/tools/mtmd/mtmd-image.h
+cp ./$LLAMA_DIR/tools/mtmd/mtmd-image.cpp ./cpp/tools/mtmd/mtmd-image.cpp
 
-rm -rf ./cpp/minja
+rm -rf ./cpp/common/jinja
+cp -r ./$LLAMA_DIR/common/jinja ./cpp/common/jinja
+
+# Rename jinja/string.h to avoid conflict with system <string.h>
+mv ./cpp/common/jinja/string.h ./cpp/common/jinja/jinja-string.h
+# Update includes in jinja files
+if [ "$OS" = "Darwin" ]; then
+  sed -i '' 's|#include "string.h"|#include "jinja-string.h"|g' ./cpp/common/jinja/value.h
+  sed -i '' 's|#include "jinja/string.h"|#include "jinja/jinja-string.h"|g' ./cpp/common/jinja/string.cpp
+else
+  sed -i 's|#include "string.h"|#include "jinja-string.h"|g' ./cpp/common/jinja/value.h
+  sed -i 's|#include "jinja/string.h"|#include "jinja/jinja-string.h"|g' ./cpp/common/jinja/string.cpp
+fi
+
 rm -rf ./cpp/nlohmann
-cp -r ./$LLAMA_DIR/vendor/minja ./cpp/minja
 cp -r ./$LLAMA_DIR/vendor/nlohmann ./cpp/nlohmann
 rm -rf ./cpp/tools/mtmd/miniaudio
 rm -rf ./cpp/tools/mtmd/stb
@@ -314,7 +342,6 @@ files_add_lm_prefix=(
   ./cpp/ggml-opencl/*.cpp
 
   ./cpp/ggml-hexagon/*.cpp
-  ./cpp/ggml-hexagon/*.c
   ./cpp/ggml-hexagon/*.h
   ./cpp/ggml-hexagon/htp/*.c
   ./cpp/ggml-hexagon/htp/*.h
@@ -336,6 +363,10 @@ files_add_lm_prefix=(
   # Multimodal files
   ./cpp/tools/mtmd/*.h
   ./cpp/tools/mtmd/*.cpp
+  ./cpp/tools/mtmd/models/*.h
+  ./cpp/tools/mtmd/models/*.cpp
+  ./cpp/tools/mtmd/debug/*.h
+  ./cpp/tools/mtmd/debug/*.cpp
 
   # llama api
   ./cpp/*.h
@@ -414,8 +445,15 @@ done
 
 rm -rf ./cpp/*.orig
 rm -rf ./cpp/**/*.orig
+rm -rf ./cpp/**/*/*.orig
 
 if [ "$OS" = "Darwin" ]; then
+  # Refresh Pods after source list changes so the example target picks up
+  # renamed/added/removed native files from the updated llama.cpp snapshot.
+  cd example
+  npm run pods
+  cd ..
+
   # Generate .xcode.env.local in iOS example
   cd example/ios
   echo export NODE_BINARY=$(command -v node) > .xcode.env.local

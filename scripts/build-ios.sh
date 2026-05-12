@@ -9,8 +9,8 @@ function cp_headers() {
   mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers
   cp ../cpp/*.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/
 
-  mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/minja
-  cp ../cpp/minja/*.hpp ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/minja/
+  mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/jinja
+  cp ../cpp/common/jinja/*.h ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/jinja/
   
   mkdir -p ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/nlohmann/
   cp ../cpp/nlohmann/*.hpp ../ios/Sources/CapacitorLlamaPlugin/capllama.xcframework/$1/capllama.framework/Headers/nlohmann/
@@ -82,7 +82,7 @@ mkdir -p build-tvos
 # Build tvOS frameworks
 build_framework "tvOS" "arm64;x86_64" "appletvsimulator" "tvos-arm64_x86_64-simulator" "build-tvos"
 build_framework "tvOS" "arm64" "appletvos" "tvos-arm64" "build-tvos"
-# rm -rf build-tvos
+rm -rf build-tvos
 
 t1=$(date +%s)
 echo "Total time: $((t1 - t0)) seconds"

@@ -1,11 +1,9 @@
 #include "models.h"
 
-
-
 llm_build_nemotron_h::llm_build_nemotron_h(const llama_model & model, const llm_graph_params & params) :
-    llm_graph_context_mamba(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
+    llm_build_mamba_base(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -65,54 +63,72 @@ llm_build_nemotron_h::llm_build_nemotron_h(const llama_model & model, const llm_
 lm_ggml_tensor * llm_build_nemotron_h::build_attention_layer(lm_ggml_tensor *             cur,
                                                           llm_graph_input_attn_kv * inp_attn,
                                                           const llama_model &       model,
-                                                          const int64_t             n_embd_head,
-                                                          const int                 il) {
-    // compute Q and K and (optionally) RoPE them
-    lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-    cb(Qcur, "Qcur", il);
-    if (model.layers[il].bq) {
-        Qcur = lm_ggml_add(ctx0, Qcur, model.layers[il].bq);
-        cb(Qcur, "Qcur", il);
-    }
-
-    lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-    cb(Kcur, "Kcur", il);
-    if (model.layers[il].bk) {
-        Kcur = lm_ggml_add(ctx0, Kcur, model.layers[il].bk);
-        cb(Kcur, "Kcur", il);
-    }
-
-    lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-    cb(Vcur, "Vcur", il);
-    if (model.layers[il].bv) {
-        Vcur = lm_ggml_add(ctx0, Vcur, model.layers[il].bv);
-        cb(Vcur, "Vcur", il);
-    }
-
-    Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, hparams.n_head(il), n_tokens);
-    Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, hparams.n_head_kv(il), n_tokens);
-    Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, hparams.n_head_kv(il), n_tokens);
-
-    cb(Qcur, "Qcur", il);
-    cb(Kcur, "Kcur", il);
-    cb(Vcur, "Vcur", il);
+                                                                int64_t             n_embd_head,
+                                                                int                 il) {
+    auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur, n_embd_head, hparams.n_head(il), hparams.n_head_kv(il), il);
 
     const float kq_scale =
         hparams.f_attention_scale == 0.0f ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
     cur = build_attn(inp_attn,
-            model.layers[il].wo, model.layers[il].bo,
+            model.layers[il].wo, model.layers[il].bo, model.layers[il].wo_s,
             Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
     cb(cur, "attn_out", il);
     return cur;
 }
 
-lm_ggml_tensor * llm_build_nemotron_h::build_ffn_layer(lm_ggml_tensor * cur, const llama_model & model, const int il) {
-    cur = build_ffn(cur,
-            model.layers[il].ffn_up, model.layers[il].ffn_up_b, NULL,
-            NULL, NULL, NULL,
-            model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL,
-            NULL, LLM_FFN_RELU_SQR, LLM_FFN_PAR, il);
-    cb(cur, "ffn_out", il);
+lm_ggml_tensor * llm_build_nemotron_h::build_ffn_layer(lm_ggml_tensor * cur, const llama_model & model, int il) {
+    if (model.layers[il].ffn_gate_inp == nullptr) {
+        cur = build_ffn(cur,
+                model.layers[il].ffn_up,   model.layers[il].ffn_up_b,   model.layers[il].ffn_up_s,
+                NULL,                      NULL,                        NULL,
+                model.layers[il].ffn_down, model.layers[il].ffn_down_b, model.layers[il].ffn_down_s,
+                NULL,
+                LLM_FFN_RELU_SQR, LLM_FFN_PAR, il);
+        cb(cur, "ffn_out", il);
+    } else {
+        lm_ggml_tensor * inp_emb    = cur;
+        lm_ggml_tensor * inp_latent = cur;
+
+        if (model.layers[il].ffn_latent_down) {
+            inp_latent = lm_ggml_mul_mat(ctx0, model.layers[il].ffn_latent_down, cur);
+        }
+
+        lm_ggml_tensor * router_logits = build_lora_mm(model.layers[il].ffn_gate_inp, cur);
+        cb(router_logits, "ffn_moe_logits", il);
+
+        lm_ggml_tensor * moe_out =
+            build_moe_ffn(inp_latent,
+                    model.layers[il].ffn_gate_inp,
+                    model.layers[il].ffn_up_exps,
+                    nullptr, // no gate
+                    model.layers[il].ffn_down_exps,
+                    model.layers[il].ffn_exp_probs_b,
+                    n_expert, n_expert_used,
+                    LLM_FFN_RELU_SQR, hparams.expert_weights_norm,
+                    hparams.expert_weights_scale,
+                    LLAMA_EXPERT_GATING_FUNC_TYPE_SIGMOID,
+                    il,
+                    router_logits, nullptr,
+                    model.layers[il].ffn_up_exps_s,
+                    nullptr, // no gate
+                    model.layers[il].ffn_down_exps_s);
+        cb(moe_out, "ffn_moe_out", il);
+
+        if (model.layers[il].ffn_latent_up) {
+            moe_out = lm_ggml_mul_mat(ctx0, model.layers[il].ffn_latent_up, moe_out);
+        }
+
+        lm_ggml_tensor * ffn_shexp = build_ffn(inp_emb,
+                    model.layers[il].ffn_up_shexp,   NULL, model.layers[il].ffn_up_shexp_s,
+                    NULL /* no gate */           ,   NULL, NULL,
+                    model.layers[il].ffn_down_shexp, NULL, model.layers[il].ffn_down_shexp_s,
+                    NULL,
+                    LLM_FFN_RELU_SQR, LLM_FFN_PAR, il);
+        cb(ffn_shexp, "ffn_shexp", il);
+
+        cur = lm_ggml_add(ctx0, moe_out, ffn_shexp);
+        cb(cur, "ffn_out", il);
+    }
 
     cur = build_cvec(cur, il);
     cb(cur, "l_out", il);

@@ -1,12 +1,9 @@
 #include "models.h"
 
-
-
 llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
-    const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -30,8 +27,8 @@ llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params
     cb(inpL, "inp_embd", -1);
 
     // embed layer norm
-    inpL = build_norm(inpL, model.tok_norm, model.tok_norm_b, LLM_NORM, -1);
-    cb(inpL, "inp_norm", -1);
+    inpL = build_norm(inpL, model.tok_norm, model.tok_norm_b, LLM_NORM, 0);
+    cb(inpL, "inp_norm", 0);
 
     auto * inp_attn = build_attn_inp_no_cache();
 
@@ -41,35 +38,8 @@ llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params
         lm_ggml_tensor * cur = inpL;
 
         {
-            lm_ggml_tensor * Qcur;
-            lm_ggml_tensor * Kcur;
-            lm_ggml_tensor * Vcur;
-
-            // self-attention
-            if (model.layers[il].wqkv) {
-                cur = build_lora_mm(model.layers[il].wqkv, cur);
-                cb(cur, "wqkv", il);
-
-                if (model.layers[il].bqkv) {
-                    cur = lm_ggml_add(ctx0, cur, model.layers[il].bqkv);
-                    cb(cur, "bqkv", il);
-                }
-
-                Qcur = lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head, n_tokens, n_embd_head * sizeof(float), cur->nb[1],
-                                    0 * sizeof(float) * (n_embd));
-                Kcur = lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head_kv, n_tokens, n_embd_head * sizeof(float),
-                                    cur->nb[1], 1 * sizeof(float) * (n_embd));
-                Vcur = lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head_kv, n_tokens, n_embd_head * sizeof(float),
-                                    cur->nb[1], 1 * sizeof(float) * (n_embd + n_embd_gqa));
-            } else {
-                Qcur = lm_ggml_add(ctx0, build_lora_mm(model.layers[il].wq, cur), model.layers[il].bq);
-                Kcur = lm_ggml_add(ctx0, build_lora_mm(model.layers[il].wk, cur), model.layers[il].bk);
-                Vcur = lm_ggml_add(ctx0, build_lora_mm(model.layers[il].wv, cur), model.layers[il].bv);
-
-                Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head, n_tokens);
-                Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-                Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
-            }
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
 
             if (model.layers[il].attn_q_norm) {
                 Qcur = lm_ggml_reshape_2d(ctx0, Qcur, n_embd_head * n_head, n_tokens);
@@ -102,7 +72,7 @@ llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].bo,
+                    model.layers[il].wo, model.layers[il].bo, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f / sqrtf(float(n_embd_head)), il);
             cb(cur, "kqv_out", il);
         }
@@ -129,9 +99,17 @@ llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params
         // feed-forward network
         if (hparams.moe_every_n_layers > 0 && il % hparams.moe_every_n_layers == 1) {
             // MoE branch
-            cur = build_moe_ffn(cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps, nullptr,
-                                model.layers[il].ffn_down_exps, nullptr, hparams.n_expert, hparams.n_expert_used,
-                                LLM_FFN_GELU, false, false, 0.0f, LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX, il);
+            cur = build_moe_ffn(cur,
+                    model.layers[il].ffn_gate_inp,
+                    model.layers[il].ffn_up_exps,
+                    nullptr,
+                    model.layers[il].ffn_down_exps,
+                    nullptr,
+                    hparams.n_expert, hparams.n_expert_used,
+                    LLM_FFN_GELU, false,
+                    hparams.expert_weights_scale,
+                    LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
+                    il);
             cb(cur, "ffn_moe_out", il);
         } else if (model.arch == LLM_ARCH_BERT || model.arch == LLM_ARCH_NOMIC_BERT_MOE ||
                    model.arch == LLM_ARCH_JINA_BERT_V3) {
@@ -142,11 +120,13 @@ llm_build_bert::llm_build_bert(const llama_model & model, const llm_graph_params
                     LLM_FFN_GELU, LLM_FFN_SEQ, il);
             cb(cur, "ffn_out", il);
         } else if (model.arch == LLM_ARCH_JINA_BERT_V2) {
+            const bool up_contains_gate = !model.layers[il].ffn_gate && model.layers[il].ffn_up->ne[1] != hparams.n_ff();
+            auto type_op = up_contains_gate ? LLM_FFN_GEGLU : LLM_FFN_GELU;
             cur = build_ffn(cur,
-                    model.layers[il].ffn_up, NULL, NULL,
+                    model.layers[il].ffn_up, model.layers[il].ffn_up_b, NULL,
                     model.layers[il].ffn_gate, NULL, NULL,
                     model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL, NULL,
-                    model.layers[il].ffn_gate ? LLM_FFN_GELU : LLM_FFN_GEGLU, LLM_FFN_PAR, il);
+                    type_op, LLM_FFN_PAR, il);
             cb(cur, "ffn_out", il);
         } else {
             cur = build_ffn(cur,

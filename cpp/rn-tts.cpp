@@ -285,8 +285,8 @@ llama_rn_context_tts::llama_rn_context_tts(const std::string &vocoder_model_path
 
   init_result = common_init_from_params(vocoder_params);
   params = vocoder_params;
-  model = init_result.model.get();
-  ctx = init_result.context.get();
+  model = init_result->model();
+  ctx = init_result->context();
 
   if (model == nullptr || ctx == nullptr) {
       LOG_ERROR("Failed to load vocoder model: %s", vocoder_model_path.c_str());
@@ -574,22 +574,31 @@ std::vector<float> llama_rn_context_tts::decodeAudioTokens(llama_rn_context* mai
         return std::vector<float>();
     }
     const int n_codes = tokens_audio.size();
+    if (n_codes == 0) {
+        return std::vector<float>();
+    }
+
     llama_batch batch = llama_batch_init(n_codes, 0, 1);
     for (size_t i = 0; i < tokens_audio.size(); ++i) {
         llama_batch_add(&batch, tokens_audio[i], i, { 0 }, true);
     }
     if (batch.n_tokens != n_codes) {
         LOG_ERROR("batch.n_tokens != n_codes: %d != %d", batch.n_tokens, n_codes);
+        llama_batch_free(batch);
         return std::vector<float>();
     }
     if (llama_encode(ctx, batch) != 0) {
         LOG_ERROR("llama_encode() failed");
+        llama_batch_free(batch);
         return std::vector<float>();
     }
     llama_synchronize(ctx);
-    const int n_embd = llama_model_n_embd(model);
+    // WavTokenizer exposes the decoder spectrogram width as n_embd_out after llama.cpp b7996.
+    const int n_embd = llama_model_n_embd_out(model);
     const float * embd = llama_get_embeddings(ctx);
-    return embd_to_audio(embd, n_codes, n_embd, main_ctx->params.cpuparams.n_threads);
+    auto audio = embd_to_audio(embd, n_codes, n_embd, main_ctx->params.cpuparams.n_threads);
+    llama_batch_free(batch);
+    return audio;
 }
 
 }

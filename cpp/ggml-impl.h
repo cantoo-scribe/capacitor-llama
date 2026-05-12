@@ -24,15 +24,13 @@
 #include <arm_neon.h>
 #endif
 
-#if defined(__F16C__)
-#include <immintrin.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void lm_ggml_print_backtrace(void);
+
+uint64_t lm_ggml_graph_next_uid(void);
 
 #ifndef MIN
 #    define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -100,6 +98,10 @@ static bool lm_ggml_op_is_empty(enum lm_ggml_op op) {
         default:
             return false;
     }
+}
+
+static inline bool lm_ggml_impl_is_view(const struct lm_ggml_tensor * t) {
+    return t->view_src != NULL;
 }
 
 static inline float lm_ggml_compute_softplus_f32(float input) {
@@ -338,6 +340,10 @@ struct lm_ggml_cgraph {
     struct lm_ggml_hash_set visited_hash_set;
 
     enum lm_ggml_cgraph_eval_order order;
+
+    // an optional identifier that can be utilized to recognize same graphs if two non-zero values match
+    // a value of 0 means it is not set and should be ignored
+    uint64_t uid;
 };
 
 // returns a slice of cgraph with nodes [i0, i1)
@@ -491,6 +497,61 @@ static inline float lm_ggml_e8m0_to_fp32_half(uint8_t x) {
 #define LM_GGML_E8M0_TO_FP32(x) lm_ggml_e8m0_to_fp32(x)
 #define LM_GGML_E8M0_TO_FP32_HALF(x) lm_ggml_e8m0_to_fp32_half(x)
 
+// UE4M3: unsigned, 4 exp bits (bias=7), 3 mantissa bits
+// Returns value * 0.5 to match kvalues_mxfp4 convention (kvalues = 2 * E2M1_float)
+static inline float lm_ggml_ue4m3_to_fp32(uint8_t x) {
+    if (x == 0 || x == 0x7F) {
+        return 0.0f;
+    }
+    int   exp = (x >> 3) & 0xF;
+    int   man = x & 0x7;
+    float raw;
+    if (exp == 0) {
+        raw = ldexpf((float) man, -9);
+    } else {
+        raw = ldexpf(1.0f + (float) man / 8.0f, exp - 7);
+    }
+    return raw * 0.5f;
+}
+
+static inline uint8_t lm_ggml_fp32_to_ue4m3(float x) {
+    if (!(x > 0.0f)) {
+        return 0;
+    }
+    if (x > 448.0f) {
+        x = 448.0f;
+    }
+    uint32_t bits;
+    memcpy(&bits, &x, 4);
+    int fp32_exp  = ((bits >> 23) & 0xFF) - 127;
+    int fp32_man  = (bits >> 20) & 0x7;
+    int ue4m3_exp = fp32_exp + 7;
+    if (ue4m3_exp <= 0) {
+        // subnormal: value = man * 2^-9, man = round(x * 2^9)
+        int man = (int) (x * 512.0f + 0.5f);
+        if (man > 7) {
+            man = 7;
+        }
+        if (man < 1) {
+            return 0;
+        }
+        return (uint8_t) man;
+    }
+    if (ue4m3_exp >= 15) {
+        return 0x7E;
+    }
+    int round_bit = (bits >> 19) & 1;
+    int ue4m3_man = fp32_man + round_bit;
+    if (ue4m3_man > 7) {
+        ue4m3_man = 0;
+        ue4m3_exp++;
+        if (ue4m3_exp >= 15) {
+            return 0x7E;
+        }
+    }
+    return (uint8_t) ((ue4m3_exp << 3) | ue4m3_man);
+}
+
 /**
  * Converts brain16 to float32.
  *
@@ -615,6 +676,9 @@ static inline bool lm_ggml_can_fuse_ext(const struct lm_ggml_cgraph * cgraph, co
         if (node->op != ops[i]) {
             return false;
         }
+        if ((node->flags & LM_GGML_TENSOR_FLAG_COMPUTE) == 0) {
+            return false;
+        }
         if (i < num_ops - 1 && !lm_ggml_node_has_n_uses(cgraph, node_idxs[i], 1)) {
             return false;
         }
@@ -715,6 +779,5 @@ inline bool lm_ggml_check_edges(const struct lm_ggml_cgraph *                cgr
 
 // expose GGUF internals for test code
 LM_GGML_API size_t lm_gguf_type_size(enum lm_gguf_type type);
-LM_GGML_API struct lm_gguf_context * lm_gguf_init_from_file_impl(FILE * file, struct lm_gguf_init_params params);
 LM_GGML_API void lm_gguf_write_to_buf(const struct lm_gguf_context * ctx, std::vector<int8_t> & buf, bool only_meta);
 #endif // __cplusplus

@@ -138,6 +138,7 @@
             if ([params[@"devices"] containsObject:[NSString stringWithUTF8String:dev_name]]) {
                 switch (lm_ggml_backend_dev_type(dev)) {
                     case LM_GGML_BACKEND_DEVICE_TYPE_CPU:
+                    case LM_GGML_BACKEND_DEVICE_TYPE_META:
 #ifndef TARGET_OS_SIMULATOR
                     case LM_GGML_BACKEND_DEVICE_TYPE_ACCEL:
 #endif
@@ -317,10 +318,10 @@
         if (context->is_model_loaded) {
             context->llama->attachThreadpoolsIfAvailable();
 
-            const auto &model_devices = context->llama->llama_init.model->devices;
+            const auto &model_devices = context->llama->llama_init->model()->devices;
             for (auto dev : model_devices) {
-                auto dev_type = lm_ggml_backend_dev_type(dev);
-                const char *used_name = lm_ggml_backend_dev_name(dev);
+                auto dev_type = lm_ggml_backend_dev_type(dev.dev);
+                const char *used_name = lm_ggml_backend_dev_name(dev.dev);
                 if (used_name != nullptr) {
                     [usedDevices addObject:[NSString stringWithUTF8String:used_name]];
                 }
@@ -360,10 +361,14 @@
         }
     }
     if (lora.size() > 0) {
-        int result = context->llama->applyLoraAdapters(lora);
-        if (result != 0) {
+        try {
+            context->llama->applyLoraAdapters(lora);
+        } catch (const std::exception &e) {
             delete context->llama;
-            @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to apply lora adapters" userInfo:nil];
+            @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+        } catch (const std::runtime_error& e) {
+            delete context->llama;
+            @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
         }
     }
 
@@ -415,10 +420,10 @@
         tool_use_caps_dir = @{
             @"tools": @(tool_use_caps.supports_tools),
             @"toolCalls": @(tool_use_caps.supports_tool_calls),
-            @"toolResponses": @(tool_use_caps.supports_tool_responses),
+//            @"toolResponses": @(tool_use_caps.supports_tool_responses),
             @"systemRole": @(tool_use_caps.supports_system_role),
             @"parallelToolCalls": @(tool_use_caps.supports_parallel_tool_calls),
-            @"toolCallId": @(tool_use_caps.supports_tool_call_id)
+//            @"toolCallId": @(tool_use_caps.supports_tool_call_id)
         };
     }
 
@@ -438,10 +443,10 @@
                 @"defaultCaps": @{
                     @"tools": @(default_tmpl_caps.supports_tools),
                     @"toolCalls": @(default_tmpl_caps.supports_tool_calls),
-                    @"toolResponses": @(default_tmpl_caps.supports_tool_responses),
+//                    @"toolResponses": @(default_tmpl_caps.supports_tool_responses),
                     @"systemRole": @(default_tmpl_caps.supports_system_role),
                     @"parallelToolCalls": @(default_tmpl_caps.supports_parallel_tool_calls),
-                    @"toolCallId": @(default_tmpl_caps.supports_tool_call_id)
+//                    @"toolCallId": @(default_tmpl_caps.supports_tool_call_id)
                 },
                 @"toolUse": @(llama->validateModelChatTemplate(true, "tool_use")),
                 @"toolUseCaps": tool_use_caps_dir ?: @{}
@@ -475,6 +480,7 @@
     withTools:(NSString *)tools
     withParallelToolCalls:(BOOL)parallelToolCalls
     withToolChoice:(NSString *)toolChoice
+    withReasoningFormat:(NSString *)reasoningFormat
     withEnableThinking:(BOOL)enableThinking
 {
     auto tmpl_str = chatTemplate == nil ? "" : [chatTemplate UTF8String];
@@ -487,7 +493,8 @@
         tools == nil ? "" : [tools UTF8String],
         parallelToolCalls,
         toolChoice == nil ? "" : [toolChoice UTF8String],
-        enableThinking
+        enableThinking,
+        reasoningFormat == nil ? "" : [reasoningFormat UTF8String]
     );
     result[@"prompt"] = [NSString stringWithUTF8String:chatParams.prompt.c_str()];
     result[@"chat_format"] = @(static_cast<int>(chatParams.format));
@@ -501,7 +508,7 @@
             @"token": @(trigger.token),
         }];
     }
-    result[@"thinking_forced_open"] = @(chatParams.thinking_forced_open);
+    result[@"thinking_forced_open"] = @(false); // @(chatParams.thinking_forced_open);
     result[@"grammar_triggers"] = grammar_triggers;
     NSMutableArray *preserved_tokens = [[NSMutableArray alloc] init];
     for (const auto & token : chatParams.preserved_tokens) {
@@ -620,11 +627,11 @@
     }
 
     if (params[@"grammar"]) {
-        sparams.grammar = [params[@"grammar"] UTF8String];
+        sparams.grammar = {COMMON_GRAMMAR_TYPE_USER, [params[@"grammar"] UTF8String]} ;// [params[@"grammar"] UTF8String];
     }
 
     if (params[@"json_schema"] && !params[@"grammar"]) {
-        sparams.grammar = json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]));
+        sparams.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]))}; // json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]));
     }
 
     if (params[@"grammar_lazy"]) {
@@ -729,7 +736,10 @@
     std::string reasoningFormatStr = [reasoningFormat UTF8String];
     common_reasoning_format reasoning_format = common_reasoning_format_from_name(reasoningFormatStr);
 
-    llama->completion->beginCompletion(chat_format, reasoning_format, thinking_forced_open);
+    NSString *generationPrompt = params[@"generation_prompt"];
+    std::string generationPromptStr = generationPrompt ? [generationPrompt UTF8String] : "";
+
+    llama->completion->beginCompletion(chat_format, reasoning_format, generationPromptStr);
 
     try {
         llama->completion->loadPrompt({});
@@ -1056,9 +1066,12 @@
         }
         lora_adapters.push_back(la);
     }
-    int result = llama->applyLoraAdapters(lora_adapters);
-    if (result != 0) {
-        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to apply lora adapters" userInfo:nil];
+    try {
+        llama->applyLoraAdapters(lora_adapters);
+    } catch (const std::exception &e) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
+    } catch (const std::runtime_error& e) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:[NSString stringWithUTF8String:e.what()] userInfo:nil];
     }
 }
 
@@ -1161,11 +1174,11 @@
 
     // Grammar
     if (params[@"grammar"]) {
-        sparams.grammar = [params[@"grammar"] UTF8String];
+        sparams.grammar = { COMMON_GRAMMAR_TYPE_USER, [params[@"grammar"] UTF8String] }; // [params[@"grammar"] UTF8String];
     }
 
     if (params[@"json_schema"] && !params[@"grammar"]) {
-        sparams.grammar = json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]));
+        sparams.grammar = { COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String])) }; // json_schema_to_grammar(json::parse([params[@"json_schema"] UTF8String]));
     }
 
     if (params[@"grammar_lazy"]) {
@@ -1263,6 +1276,12 @@
     common_reasoning_format reasoning_format = common_reasoning_format_from_name(reasoningFormatStr);
 
     bool thinking_forced_open = params[@"thinking_forced_open"] ? [params[@"thinking_forced_open"] boolValue] : false;
+    
+    NSString *generationPrompt = params[@"generation_prompt"];
+    std::string generationPromptStr = generationPrompt ? [generationPrompt UTF8String] : "";
+    
+    NSString *chatParser = params[@"chat_parser"];
+    std::string chat_parser_str = chatParser ? [chatParser UTF8String] : "";
 
     // Get prefill text
     NSString *prefillText = params[@"prefill_text"];
@@ -1271,6 +1290,8 @@
     // Get state parameters
     std::string load_state_path;
     std::string save_state_path;
+    std::string save_prompt_state_path;
+    int32_t load_state_size = -1;
     int32_t save_state_size = -1;
 
     if (params[@"load_state_path"] && [params[@"load_state_path"] isKindOfClass:[NSString class]]) {
@@ -1465,10 +1486,13 @@
         prompt ? [prompt UTF8String] : "",  // Original prompt text (needed for media processing)
         chat_format,
         reasoning_format,
-        thinking_forced_open,
+        generationPromptStr,
+        chat_parser_str,
         prefill_text_str,
         load_state_path,
         save_state_path,
+        save_prompt_state_path,
+        load_state_size,
         save_state_size,
         token_callback,
         complete_callback

@@ -1,14 +1,23 @@
 #include "models.h"
 
 llm_build_glm4_moe::llm_build_glm4_moe(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+
+    int sections[4];
+    std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
 
     inpL = build_inp_embd(model.tok_embd);
+
+    bool use_mrope = hparams.use_mrope();
+    if (ubatch.embd && !use_mrope) {
+        // unfortunately, we need to forcefully stop here, to avoid users complaining about wrong results
+        LM_GGML_ABORT("This GGUF does not support multimodal. Please reconvert it.");
+    }
 
     // inp_pos - contains the positions
     lm_ggml_tensor * inp_pos = build_inp_pos();
@@ -29,27 +38,8 @@ llm_build_glm4_moe::llm_build_glm4_moe(const llama_model & model, const llm_grap
 
         // self-attention
         {
-            lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-            if (model.layers[il].bq) {
-                Qcur = lm_ggml_add(ctx0, Qcur, model.layers[il].bq);
-            }
-            cb(Qcur, "Qcur", il);
-
-            lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-            if (model.layers[il].bk) {
-                Kcur = lm_ggml_add(ctx0, Kcur, model.layers[il].bk);
-            }
-            cb(Kcur, "Kcur", il);
-
-            lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-            if (model.layers[il].bv) {
-                Vcur = lm_ggml_add(ctx0, Vcur, model.layers[il].bv);
-            }
-            cb(Vcur, "Vcur", il);
-
-            Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head, n_tokens);
-            Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
 
             // Apply Q/K norm if available (GLM-4.5 355B variant)
             if (model.layers[il].attn_q_norm) {
@@ -60,24 +50,32 @@ llm_build_glm4_moe::llm_build_glm4_moe(const llama_model & model, const llm_grap
                 Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, il);
                 cb(Kcur, "Kcur_normed", il);
             }
-            Qcur = lm_ggml_rope_ext(
-                    ctx0, Qcur, inp_pos, nullptr,
-                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
-                    ext_factor, attn_factor, beta_fast, beta_slow
-                    );
 
-            Kcur = lm_ggml_rope_ext(
-                    ctx0, Kcur, inp_pos, nullptr,
-                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
-                    ext_factor, attn_factor, beta_fast, beta_slow
-                    );
+            if (use_mrope) {
+                Qcur = lm_ggml_rope_multi(ctx0, Qcur, inp_pos, nullptr,
+                            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+                            ext_factor, attn_factor, beta_fast, beta_slow);
+
+                Kcur = lm_ggml_rope_multi(ctx0, Kcur, inp_pos, nullptr,
+                            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+                            ext_factor, attn_factor, beta_fast, beta_slow);
+            } else {
+                // Normal RoPE
+                Qcur = lm_ggml_rope_ext(ctx0, Qcur, inp_pos, nullptr, n_rot,
+                                    rope_type, n_ctx_orig, freq_base, freq_scale,
+                                    ext_factor, attn_factor, beta_fast, beta_slow);
+
+                Kcur = lm_ggml_rope_ext(ctx0, Kcur, inp_pos, nullptr, n_rot,
+                                    rope_type, n_ctx_orig, freq_base, freq_scale,
+                                    ext_factor, attn_factor, beta_fast, beta_slow);
+            }
 
             cb(Qcur, "Qcur", il);
             cb(Kcur, "Kcur", il);
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, NULL,
+                    model.layers[il].wo, NULL, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
         if (il == n_transformer_layers - 1 && inp_out_ids) {
@@ -111,7 +109,7 @@ llm_build_glm4_moe::llm_build_glm4_moe(const llama_model & model, const llm_grap
                     model.layers[il].ffn_exp_probs_b,
                     n_expert, n_expert_used,
                     LLM_FFN_SILU, hparams.expert_weights_norm,
-                    true, hparams.expert_weights_scale,
+                    hparams.expert_weights_scale,
                     (llama_expert_gating_func_type) hparams.expert_gating_func,
                     il);
             cb(routed_out, "ffn_moe_out", il);

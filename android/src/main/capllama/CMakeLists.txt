@@ -13,6 +13,7 @@ set(CAPLLAMA_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cpp)
 include_directories(
     ${CAPLLAMA_LIB_DIR}
     ${CAPLLAMA_LIB_DIR}/common
+    ${CAPLLAMA_LIB_DIR}/common/jinja
     ${CAPLLAMA_LIB_DIR}/ggml-cpu
     ${CAPLLAMA_LIB_DIR}/tools/mtmd
 )
@@ -24,7 +25,9 @@ file(GLOB GGML_CPU_CPP_FILES ${CAPLLAMA_LIB_DIR}/ggml-cpu/*.cpp)
 file(GLOB GGML_CPU_AMX_FILES ${CAPLLAMA_LIB_DIR}/ggml-cpu/amx/*.cpp)
 file(GLOB LLAMA_FILES ${CAPLLAMA_LIB_DIR}/llama*.cpp)
 file(GLOB MTMD_FILES ${CAPLLAMA_LIB_DIR}/tools/mtmd/*.cpp)
+file(GLOB MTMD_MODEL_FILES ${CAPLLAMA_LIB_DIR}/tools/mtmd/models/*.cpp)
 file(GLOB COMMON_FILES ${CAPLLAMA_LIB_DIR}/common/*.cpp)
+file(GLOB JINJA_FILES ${CAPLLAMA_LIB_DIR}/common/jinja/*.cpp)
 
 # Source files for rnllama library (excluding jni.cpp and jni-utils)
 set(
@@ -33,6 +36,8 @@ set(
     ${CAPLLAMA_LIB_DIR}/ggml.c
     ${CAPLLAMA_LIB_DIR}/ggml-alloc.c
     ${CAPLLAMA_LIB_DIR}/ggml-backend.cpp
+    ${CAPLLAMA_LIB_DIR}/ggml-backend-dl.cpp
+    ${CAPLLAMA_LIB_DIR}/ggml-backend-meta.cpp
     ${CAPLLAMA_LIB_DIR}/ggml-backend-reg.cpp
     ${CAPLLAMA_LIB_DIR}/ggml-opt.cpp
     ${CAPLLAMA_LIB_DIR}/ggml-threading.cpp
@@ -54,13 +59,11 @@ set(
 
     ${CAPLLAMA_LIB_DIR}/anyascii.c
 
-    # Header-only libraries (needed for build)
-    ${CAPLLAMA_LIB_DIR}/nlohmann/json.hpp
-    ${CAPLLAMA_LIB_DIR}/nlohmann/json_fwd.hpp
-    ${CAPLLAMA_LIB_DIR}/minja/minja.hpp
-    ${CAPLLAMA_LIB_DIR}/minja/chat-template.hpp
+    # Jinja template engine
+    ${JINJA_FILES}
 
     # Multimodal support (globbed)
+    ${MTMD_MODEL_FILES}
     ${MTMD_FILES}
 
     # React Native llama APIs
@@ -129,7 +132,7 @@ function(build_capllama_library target_name arch cpu_flags)
     # Note: Hexagon requires building DSP libraries with Hexagon SDK toolchain
     # This is a complex process that needs to be done separately
     if (ENABLE_HEXAGON)
-        # Hexagon SDK is ALWAYS required to link cdsprpc, even for prebuilt distribution
+        # Hexagon SDK is optional — if not present, build the target without Hexagon support
         set(HEXAGON_SDK_AVAILABLE OFF)
         if (HEXAGON_SDK_ROOT AND HEXAGON_TOOLS_ROOT)
             # Verify libcdsprpc.so exists
@@ -138,32 +141,37 @@ function(build_capllama_library target_name arch cpu_flags)
                 set(HEXAGON_SDK_AVAILABLE ON)
                 message(STATUS "Hexagon SDK verified and available")
             else()
-                message(FATAL_ERROR
-                    "Hexagon SDK found but libcdsprpc.so is missing at ${CDSPRPC_LIB}.\n"
-                    "The SDK installation may be incomplete. Run 'npm run bootstrap' to reinstall.")
+                message(WARNING
+                    "Hexagon SDK found but libcdsprpc.so is missing at ${CDSPRPC_LIB}. "
+                    "Building ${target_name} without Hexagon support.")
             endif()
         else()
-            message(FATAL_ERROR
-                "Hexagon SDK is required to build ${target_name} but not found.")
+            message(STATUS "Hexagon SDK not found — building ${target_name} without Hexagon support.")
         endif()
 
         if (HEXAGON_SDK_AVAILABLE)
             # Add host-side hexagon sources
             target_sources(${target_name} PRIVATE
                 ${CAPLLAMA_LIB_DIR}/ggml-hexagon/ggml-hexagon.cpp
-                ${CAPLLAMA_LIB_DIR}/ggml-hexagon/htp-utils.c
+                ${CAPLLAMA_LIB_DIR}/ggml-hexagon/htp-drv.cpp
             )
 
-            # Use pre-built stub
-            set(HEXAGON_PREBUILT_STUB "${CAPLLAMA_LIB_DIR}/ggml-hexagon/htp/v73/htp_iface_stub.c")
-            if (EXISTS ${HEXAGON_PREBUILT_STUB})
-                target_sources(${target_name} PRIVATE ${HEXAGON_PREBUILT_STUB})
-            else()
-                message(WARNING "Pre-built HTP stub not found: ${HEXAGON_PREBUILT_STUB}")
+            # The Android host build consumes generated QAIC artifacts copied by
+            # scripts/build-hexagon-htp.sh. Keep the failure mode explicit when
+            # they have not been generated yet.
+            set(HEXAGON_PREBUILT_HTP_DIR "${RNLLAMA_LIB_DIR}/ggml-hexagon/htp/v73/")
+            set(HEXAGON_HOST_STUB "${HEXAGON_PREBUILT_HTP_DIR}/htp_iface_stub.c")
+            set(HEXAGON_HOST_HEADER "${HEXAGON_PREBUILT_HTP_DIR}/htp_iface.h")
+
+            if (NOT EXISTS ${HEXAGON_HOST_STUB} OR NOT EXISTS ${HEXAGON_HOST_HEADER})
+                message(FATAL_ERROR
+                    "Hexagon host QAIC artifacts are missing. "
+                    "Run scripts/build-hexagon-htp.sh to generate ${HEXAGON_PREBUILT_HTP_DIR}.")
             endif()
 
-            # Use pre-built IDL headers from build-hexagon-htp directory
-            set(HEXAGON_PREBUILT_HTP_DIR "${CAPLLAMA_LIB_DIR}/ggml-hexagon/htp/v73/")
+            target_sources(${target_name} PRIVATE
+                ${HEXAGON_HOST_STUB}
+            )
 
             target_include_directories(${target_name} PRIVATE
                 ${HEXAGON_SDK_ROOT}/incs
@@ -209,10 +217,13 @@ function(build_capllama_library target_name arch cpu_flags)
             add
             add_id
             argsort
+            tri
+            fill
             clamp
             cpy
             cvt
             diag_mask_inf
+            diag
             div
             gelu
             gemv_noshuffle_general
@@ -220,6 +231,7 @@ function(build_capllama_library target_name arch cpu_flags)
             get_rows
             glu
             group_norm
+            solve_tri
             im2col_f32
             im2col_f16
             mean
@@ -234,7 +246,14 @@ function(build_capllama_library target_name arch cpu_flags)
             mul_mv_q4_0_f32_8x_flat
             mul_mv_q4_0_f32_1d_8x_flat
             mul_mv_q4_0_f32_1d_16x_flat
-            mul_mv_q6_k
+            mul_mv_q4_1_f32
+            mul_mv_q4_1_f32_flat
+            mul_mv_q4_k_f32
+            mul_mv_q4_k_f32_flat
+            mul_mv_q5_k_f32
+            mul_mv_q5_k_f32_flat
+            mul_mv_q6_k_f32
+            mul_mv_q6_k_f32_flat
             mul_mv_q8_0_f32
             mul_mv_q8_0_f32_flat
             mul_mv_mxfp4_f32
@@ -248,10 +267,27 @@ function(build_capllama_library target_name arch cpu_flags)
             gemv_moe_mxfp4_f32
             mul_mm_f32_f32_l4_lm
             mul_mm_f16_f32_l4_lm
+            mul_mm_q4_0_f32_l4_lm
+            mul_mm_q4_1_f32_l4_lm
             mul_mm_q8_0_f32_l4_lm
+            mul_mm_q4_k_f32_l4_lm
+            mul_mm_q5_k_f32_l4_lm
+            mul_mm_q6_k_f32_l4_lm
+            mul_mm_q8_0_f32_8x4
+            gemv_noshuffle_q4_1_f32
+            gemm_noshuffle_q4_1_f32
+            gemv_noshuffle_general_q8_0_f32
+            gemv_noshuffle_q4_k_f32
+            gemm_noshuffle_q4_k_f32
+            gemv_noshuffle_q5_k_f32
+            gemm_noshuffle_q5_k_f32
+            gemv_noshuffle_q6_k_f32
+            gemm_noshuffle_q6_k_f32
             mul
+            neg
             norm
             relu
+            l2_norm
             rms_norm
             rope
             scale
@@ -267,11 +303,15 @@ function(build_capllama_library target_name arch cpu_flags)
             ssm_conv
             sub
             sum_rows
+            cumsum
             transpose
             concat
             tsembd
             upscale
             tanh
+            exp
+            expm1
+            softplus
             pad
             repeat
             mul_mat_f16_f32

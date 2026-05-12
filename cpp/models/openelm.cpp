@@ -1,9 +1,9 @@
 #include "models.h"
 
 llm_build_openelm::llm_build_openelm(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -43,7 +43,7 @@ llm_build_openelm::llm_build_openelm(const llama_model & model, const llm_graph_
             lm_ggml_tensor * Kcur = lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head_kv, n_tokens, cur->nb[1], cur->nb[2], cur->nb[1]*n_head);
             cb(Kcur, "Kcur", il);
 
-            lm_ggml_tensor * Vcur = lm_ggml_cont(ctx0, lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head_kv, n_tokens, cur->nb[1], cur->nb[2], cur->nb[1]*(n_head+n_head_kv)));
+            lm_ggml_tensor * Vcur = lm_ggml_view_3d(ctx0, cur, n_embd_head, n_head_kv, n_tokens, cur->nb[1], cur->nb[2], cur->nb[1]*(n_head+n_head_kv));
             cb(Vcur, "Vcur", il);
 
             Qcur = build_norm(Qcur,
@@ -73,7 +73,7 @@ llm_build_openelm::llm_build_openelm(const llama_model & model, const llm_graph_
             cb(Qcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, NULL,
+                    model.layers[il].wo, NULL, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
         if (il == n_layer - 1 && inp_out_ids) {

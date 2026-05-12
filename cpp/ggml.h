@@ -6,7 +6,7 @@
 // This documentation is still a work in progress.
 // If you wish some specific topics to be covered, feel free to drop a comment:
 //
-//   https://github.com/ggerganov/whisper.cpp/issues/40
+//   https://github.com/ggml-org/whisper.cpp/issues/40
 //
 // ## Overview
 //
@@ -234,6 +234,11 @@
 
 #if UINTPTR_MAX == 0xFFFFFFFF
     #define LM_GGML_MEM_ALIGN 4
+#elif defined(__EMSCRIPTEN__)
+// emscripten uses max_align_t == 8, so we need LM_GGML_MEM_ALIGN == 8 for 64-bit wasm.
+// (for 32-bit wasm, the first conditional is true and LM_GGML_MEM_ALIGN stays 4.)
+// ref: https://github.com/ggml-org/llama.cpp/pull/18628
+    #define LM_GGML_MEM_ALIGN 8
 #else
     #define LM_GGML_MEM_ALIGN 16
 #endif
@@ -422,7 +427,9 @@ extern "C" {
         // LM_GGML_TYPE_IQ4_NL_4_8 = 37,
         // LM_GGML_TYPE_IQ4_NL_8_8 = 38,
         LM_GGML_TYPE_MXFP4   = 39, // MXFP4 (1 block)
-        LM_GGML_TYPE_COUNT   = 40,
+        LM_GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
+        LM_GGML_TYPE_Q1_0    = 41,
+        LM_GGML_TYPE_COUNT   = 42,
     };
 
     // precision
@@ -458,6 +465,8 @@ extern "C" {
         LM_GGML_FTYPE_MOSTLY_IQ1_M   = 23, // except 1d tensors
         LM_GGML_FTYPE_MOSTLY_BF16    = 24, // except 1d tensors
         LM_GGML_FTYPE_MOSTLY_MXFP4   = 25, // except 1d tensors
+        LM_GGML_FTYPE_MOSTLY_NVFP4   = 26, // except 1d tensors
+        LM_GGML_FTYPE_MOSTLY_Q1_0    = 27, // except 1d tensors
     };
 
     // available tensor operations:
@@ -551,6 +560,7 @@ extern "C" {
         LM_GGML_OP_GATED_LINEAR_ATTN,
         LM_GGML_OP_RWKV_WKV7,
         LM_GGML_OP_SOLVE_TRI,
+        LM_GGML_OP_GATED_DELTA_NET,
 
         LM_GGML_OP_UNARY,
 
@@ -625,10 +635,11 @@ extern "C" {
 
     // this tensor...
     enum lm_ggml_tensor_flag {
-        LM_GGML_TENSOR_FLAG_INPUT  =  1, // ...is an input for the GGML compute graph
-        LM_GGML_TENSOR_FLAG_OUTPUT =  2, // ...is an output for the GGML compute graph
-        LM_GGML_TENSOR_FLAG_PARAM  =  4, // ...contains trainable parameters
-        LM_GGML_TENSOR_FLAG_LOSS   =  8, // ...defines loss for numerical optimization (multiple loss tensors add up)
+        LM_GGML_TENSOR_FLAG_INPUT   =  1, // ...is an input for the GGML compute graph
+        LM_GGML_TENSOR_FLAG_OUTPUT  =  2, // ...is an output for the GGML compute graph
+        LM_GGML_TENSOR_FLAG_PARAM   =  4, // ...contains trainable parameters
+        LM_GGML_TENSOR_FLAG_LOSS    =  8, // ...defines loss for numerical optimization (multiple loss tensors add up)
+        LM_GGML_TENSOR_FLAG_COMPUTE = 16, // ...must be computed
     };
 
     enum lm_ggml_tri_type {
@@ -746,6 +757,7 @@ extern "C" {
     LM_GGML_API bool lm_ggml_is_transposed(const struct lm_ggml_tensor * tensor);
     LM_GGML_API bool lm_ggml_is_permuted  (const struct lm_ggml_tensor * tensor);
     LM_GGML_API bool lm_ggml_is_empty     (const struct lm_ggml_tensor * tensor);
+    LM_GGML_API bool lm_ggml_is_view      (const struct lm_ggml_tensor * tensor);
     LM_GGML_API bool lm_ggml_is_scalar    (const struct lm_ggml_tensor * tensor);
     LM_GGML_API bool lm_ggml_is_vector    (const struct lm_ggml_tensor * tensor);
     LM_GGML_API bool lm_ggml_is_matrix    (const struct lm_ggml_tensor * tensor);
@@ -890,15 +902,17 @@ extern "C" {
             struct lm_ggml_tensor  * b,
             struct lm_ggml_tensor  * ids);
 
-    LM_GGML_API struct lm_ggml_tensor * lm_ggml_add1(
+    LM_GGML_DEPRECATED(LM_GGML_API struct lm_ggml_tensor * lm_ggml_add1(
             struct lm_ggml_context * ctx,
             struct lm_ggml_tensor  * a,
-            struct lm_ggml_tensor  * b);
+            struct lm_ggml_tensor  * b),
+        "use lm_ggml_add instead");
 
-    LM_GGML_API struct lm_ggml_tensor * lm_ggml_add1_inplace(
+    LM_GGML_DEPRECATED(LM_GGML_API struct lm_ggml_tensor * lm_ggml_add1_inplace(
             struct lm_ggml_context * ctx,
             struct lm_ggml_tensor  * a,
-            struct lm_ggml_tensor  * b);
+            struct lm_ggml_tensor  * b),
+        "use lm_ggml_add_inplace instead");
 
     // dst = a
     // view(dst, nb1, nb2, nb3, offset) += b
@@ -1759,8 +1773,32 @@ extern "C" {
             int                   n_dims,
             int                   mode);
 
-    // custom RoPE
+    // RoPE operations with extended options
+    // a is the input tensor to apply RoPE to, shape [n_embd, n_head, n_token]
+    // b is an int32 vector with size n_token
     // c is freq factors (e.g. phi3-128k), (optional)
+    // mode can be LM_GGML_ROPE_TYPE_NORMAL or NEOX; for MROPE and VISION mode, use lm_ggml_rope_multi
+    //
+    // pseudo-code for computing theta:
+    //   for i in [0, n_dims/2):
+    //     theta[i] = b[i] * powf(freq_base, -2.0 * i / n_dims);
+    //     theta[i] = theta[i] / c[i];  # if c is provided, divide theta by c
+    //     theta[i] = rope_yarn(theta[i], ...);  # note: theta = theta * freq_scale is applied here
+    //
+    // other params are used by YaRN RoPE scaling, these default values will disable YaRN:
+    //   freq_scale  = 1.0f
+    //   ext_factor  = 0.0f
+    //   attn_factor = 1.0f
+    //   beta_fast   = 0.0f
+    //   beta_slow   = 0.0f
+    //
+    // example:
+    //   (marking: c = cos, s = sin, 0 = unrotated)
+    //   given a single head with size = 8 --> [00000000]
+    //   LM_GGML_ROPE_TYPE_NORMAL  n_dims = 4 --> [cscs0000]
+    //   LM_GGML_ROPE_TYPE_NORMAL  n_dims = 8 --> [cscscscs]
+    //   LM_GGML_ROPE_TYPE_NEOX    n_dims = 4 --> [ccss0000]
+    //   LM_GGML_ROPE_TYPE_NEOX    n_dims = 8 --> [ccccssss]
     LM_GGML_API struct lm_ggml_tensor * lm_ggml_rope_ext(
             struct lm_ggml_context * ctx,
             struct lm_ggml_tensor  * a,
@@ -1776,6 +1814,36 @@ extern "C" {
             float                 beta_fast,
             float                 beta_slow);
 
+    // multi-dimensional RoPE, for Qwen-VL and similar vision models
+    // mode can be either VISION, MROPE, IMROPE, cannot be combined with NORMAL or NEOX
+    // sections specify how many dimensions to rotate in each section:
+    //   section length is equivalent to number of cos/sin pairs, NOT the number of dims
+    //   (i.e. sum of 4 sections are expected to be n_dims/2)
+    //   last sections can be 0, means ignored
+    // all other options are identical to lm_ggml_rope_ext
+    //
+    // important note:
+    //   - NEOX ordering is automatically applied and cannot be disabled for MROPE and VISION
+    //     if you need normal ordering, there are 2 methods:
+    //     (1) split the tensor manually using lm_ggml_view
+    //     (2) permute the weight upon conversion
+    //   - for VISION, n_dims must be head_size/2
+    //
+    // example M-RoPE:
+    //  given sections = [t=4, y=2, x=2, 0]
+    //  given a single head with size = 18 --> [000000000000000000]
+    //  LM_GGML_ROPE_TYPE_MROPE   n_dims = 16 --> [ttttyyxxttttyyxx00] (cos/sin are applied in NEOX ordering)
+    //  LM_GGML_ROPE_TYPE_IMROPE  n_dims = 16 --> [ttyxttyxttyxttyx00] (interleaved M-RoPE, still NEOX ordering)
+    //  note: the theta for each dim is computed the same way as lm_ggml_rope_ext, no matter the section
+    //        in other words, idx used for theta: [0123456789... until n_dims/2], not reset for each section
+    //
+    // example vision RoPE:
+    //  given sections = [y=4, x=4, 0, 0] (last 2 sections are ignored)
+    //  given a single head with size = 8 --> [00000000]
+    //  LM_GGML_ROPE_TYPE_VISION  n_dims = 4 --> [yyyyxxxx]
+    //  other values of n_dims are untested and is undefined behavior
+    //  note: unlike MROPE, the theta for each dim is computed differently for each section
+    //        in other words, idx used for theta: [0123] for y section, then [0123] for x section
     LM_GGML_API struct lm_ggml_tensor * lm_ggml_rope_multi(
             struct lm_ggml_context * ctx,
             struct lm_ggml_tensor  * a,
@@ -2305,13 +2373,11 @@ extern "C" {
             float                 stop,
             float                 step);
 
-#define LM_GGML_KQ_MASK_PAD 1
-
-    // q:    [n_embd_k, n_batch,     n_head,    ne3 ]
-    // k:    [n_embd_k, n_kv,        n_head_kv, ne3 ]
-    // v:    [n_embd_v, n_kv,        n_head_kv, ne3 ] !! not transposed !!
-    // mask: [n_kv,     n_batch_pad, ne32,      ne33] !! n_batch_pad = LM_GGML_PAD(n_batch, LM_GGML_KQ_MASK_PAD) !!
-    // res:  [n_embd_v, n_head,      n_batch,   ne3 ] !! permuted !!
+    // q:    [n_embd_k, n_batch, n_head,    ne3 ]
+    // k:    [n_embd_k, n_kv,    n_head_kv, ne3 ]
+    // v:    [n_embd_v, n_kv,    n_head_kv, ne3 ] !! not transposed !!
+    // mask: [n_kv,     n_batch, ne32,      ne33]
+    // res:  [n_embd_v, n_head,  n_batch,   ne3 ] !! permuted !!
     //
     // broadcast:
     //   n_head % n_head_kv == 0
@@ -2462,6 +2528,17 @@ extern "C" {
         bool                  lower,
         bool                  uni);
 
+    // TODO: add lm_ggml_gated_delta_net_set_bcast() to be able to configure Q, K broadcast type: tiled vs interleaved [TAG_LM_GGML_GDN_BCAST]
+    // ref: https://github.com/ggml-org/llama.cpp/pull/19468#discussion_r2786394306
+    LM_GGML_API struct lm_ggml_tensor * lm_ggml_gated_delta_net(
+            struct lm_ggml_context * ctx,
+            struct lm_ggml_tensor  * q,
+            struct lm_ggml_tensor  * k,
+            struct lm_ggml_tensor  * v,
+            struct lm_ggml_tensor  * g,
+            struct lm_ggml_tensor  * beta,
+            struct lm_ggml_tensor  * state);
+
     // custom operators
 
     typedef void (*lm_ggml_custom1_op_t)(struct lm_ggml_tensor * dst , const struct lm_ggml_tensor * a, int ith, int nth, void * userdata);
@@ -2574,11 +2651,42 @@ extern "C" {
         struct lm_ggml_tensor *  grad,
         struct lm_ggml_tensor *  sgd_params); // alpha, weight decay
 
+    // build forward multiple tensors and select one of them for computing
+    // this is useful for creating graphs that have constant topology but compute different things based on the input
+    // ref: https://github.com/ggml-org/llama.cpp/pull/18550
     //
-    // automatic differentiation
+    // nodes:
+    //   | - build forward into the graph but do not compute
+    //   c - build forward into the graph and compute
     //
+    //    |  |  ...  c  ...  |
+    //    |  |  ...  c  ...  |
+    //    |  |  ...  c  ...  |
+    //   [0  1  ... idx ...  n-1]        <-- lm_ggml_build_forward_select(..., n, idx)
+    //               c
+    //               c
+    //
+    // example:
+    //   struct lm_ggml_tensor * curs[3];
+    //
+    //   curs[0]  = compute0(...);
+    //   curs[1]  = compute1(...);
+    //   curs[2]  = compute2(...);
+    //
+    //   int idx = select_branch(some_input);
+    //
+    //   struct lm_ggml_tensor * out = lm_ggml_build_forward_select(cgraph, curs, 3, idx);
+    //
+    LM_GGML_API struct lm_ggml_tensor * lm_ggml_build_forward_select(
+            struct lm_ggml_cgraph  * cgraph,
+            struct lm_ggml_tensor ** tensors,
+            int                   n_tensors,
+            int                   idx);
 
-    LM_GGML_API void lm_ggml_build_forward_expand(struct lm_ggml_cgraph * cgraph, struct lm_ggml_tensor * tensor);
+    LM_GGML_API void lm_ggml_build_forward_expand(
+            struct lm_ggml_cgraph * cgraph,
+            struct lm_ggml_tensor * tensor);
+
     LM_GGML_API void lm_ggml_build_backward_expand(
         struct lm_ggml_context *  ctx,        // context for gradient computation
         struct lm_ggml_cgraph  *  cgraph,
@@ -2610,14 +2718,15 @@ extern "C" {
     LM_GGML_API void lm_ggml_graph_print(const struct lm_ggml_cgraph * cgraph);
 
     // dump the graph into a file using the dot format
-    LM_GGML_API void lm_ggml_graph_dump_dot(const struct lm_ggml_cgraph * gb, const struct lm_ggml_cgraph * gf, const char * filename);
+    LM_GGML_API void lm_ggml_graph_dump_dot(const struct lm_ggml_cgraph * gb, const struct lm_ggml_cgraph * cgraph, const char * filename);
 
     // TODO these functions were sandwiched in the old optimization interface, is there a better place for them?
     typedef void (*lm_ggml_log_callback)(enum lm_ggml_log_level level, const char * text, void * user_data);
 
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.
-    LM_GGML_API void lm_ggml_log_set(lm_ggml_log_callback log_callback, void * user_data);
+    LM_GGML_API void lm_ggml_log_get(lm_ggml_log_callback * log_callback, void ** user_data);
+    LM_GGML_API void lm_ggml_log_set(lm_ggml_log_callback   log_callback, void *  user_data);
 
     LM_GGML_API struct lm_ggml_tensor * lm_ggml_set_zero(struct lm_ggml_tensor * tensor);
 

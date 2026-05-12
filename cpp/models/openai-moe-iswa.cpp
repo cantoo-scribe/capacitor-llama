@@ -14,6 +14,9 @@ llm_build_openai_moe_iswa::llm_build_openai_moe_iswa(const llama_model & model, 
     lm_ggml_tensor * inp_out_ids = build_inp_out_ids();
 
     for (int il = 0; il < n_layer; ++il) {
+        const float freq_base_l  = model.get_rope_freq_base (cparams, il);
+        const float freq_scale_l = model.get_rope_freq_scale(cparams, il);
+
         lm_ggml_tensor * inpSA = inpL;
 
         // norm
@@ -25,37 +28,18 @@ llm_build_openai_moe_iswa::llm_build_openai_moe_iswa(const llama_model & model, 
         // self-attention
         {
             // compute Q and K and RoPE them
-            lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
-            if (model.layers[il].bq) {
-                Qcur = lm_ggml_add(ctx0, Qcur, model.layers[il].bq);
-                cb(Qcur, "Qcur", il);
-            }
-            lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
-            if (model.layers[il].bk) {
-                Kcur = lm_ggml_add(ctx0, Kcur, model.layers[il].bk);
-                cb(Kcur, "Kcur", il);
-            }
-            lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
-            if (model.layers[il].bv) {
-                Vcur = lm_ggml_add(ctx0, Vcur, model.layers[il].bv);
-                cb(Vcur, "Vcur", il);
-            }
-            Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_rot, n_head,    n_tokens);
-            Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_rot, n_head_kv, n_tokens);
-            Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_rot, n_head_kv, n_tokens);
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_rot, n_head, n_head_kv, il);
 
             Qcur = lm_ggml_rope_ext(
                     ctx0, Qcur, inp_pos, nullptr,
-                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    n_rot, rope_type, n_ctx_orig, freq_base_l, freq_scale_l,
                     ext_factor, attn_factor, beta_fast, beta_slow
                     );
 
             Kcur = lm_ggml_rope_ext(
                     ctx0, Kcur, inp_pos, nullptr,
-                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    n_rot, rope_type, n_ctx_orig, freq_base_l, freq_scale_l,
                     ext_factor, attn_factor, beta_fast, beta_slow
                     );
 
@@ -64,7 +48,7 @@ llm_build_openai_moe_iswa::llm_build_openai_moe_iswa(const llama_model & model, 
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].bo,
+                    model.layers[il].wo, model.layers[il].bo, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, model.layers[il].attn_sinks, nullptr, 1.0f/sqrtf(float(n_rot)), il);
 
             cb(cur, "attn_out", il);
@@ -92,7 +76,7 @@ llm_build_openai_moe_iswa::llm_build_openai_moe_iswa(const llama_model & model, 
                 nullptr,
                 n_expert, n_expert_used,
                 LLM_FFN_SWIGLU_OAI_MOE, false,
-                false, 0.0,
+                hparams.expert_weights_scale,
                 LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX_WEIGHT,
                 il);
         cb(cur, "ffn_moe_out", il);

@@ -2,10 +2,10 @@
 
 // RND1 is a Qwen3Moe AR model converted to diffusion model.
 llm_build_rnd1::llm_build_rnd1(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
-    LM_GGML_ASSERT(n_embd_head == hparams.n_rot);
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    LM_GGML_ASSERT(n_embd_head == n_rot);
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -32,18 +32,8 @@ llm_build_rnd1::llm_build_rnd1(const llama_model & model, const llm_graph_params
         // self_attention
         {
             // compute Q and K and RoPE them
-            lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
-
-            lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
-
-            lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
-
-            Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
-            Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
 
             Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
             cb(Qcur, "Qcur_normed", il);
@@ -68,7 +58,7 @@ llm_build_rnd1::llm_build_rnd1(const llama_model & model, const llm_graph_params
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].bo,
+                    model.layers[il].wo, model.layers[il].bo, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
         if (il == n_layer - 1 && inp_out_ids) {
@@ -93,7 +83,7 @@ llm_build_rnd1::llm_build_rnd1(const llama_model & model, const llm_graph_params
                     nullptr,
                     n_expert, n_expert_used,
                     LLM_FFN_SILU, true,
-                    false, 0.0,
+                    hparams.expert_weights_scale,
                     LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
                     il);
         cb(moe_out, "ffn_moe_out", il);

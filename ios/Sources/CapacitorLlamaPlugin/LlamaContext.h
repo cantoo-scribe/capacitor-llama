@@ -10,6 +10,7 @@
 #import "rn-slot-manager.h"
 #import "json-schema-to-grammar.h"
 #import "common.h"
+#import "chat.h"
 #else
 #import <capllama/llama.h>
 #import <capllama/llama-impl.h>
@@ -20,6 +21,7 @@
 #import <capllama/rn-slot-manager.h>
 #import <capllama/json-schema-to-grammar.h>
 #import <capllama/common.h>
+#import <capllama/chat.h>
 #endif
 #endif
 
@@ -65,7 +67,8 @@
     withJsonSchema:(NSString *)jsonSchema
     withTools:(NSString *)tools
     withParallelToolCalls:(BOOL)parallelToolCalls
-    withToolChoice:(NSString *)toolChoice;
+    withToolChoice:(NSString *)toolChoice
+    withReasoningFormat:(NSString *)reasoningFormat;
 - (NSString *)getFormattedChat:(NSString *)messages withChatTemplate:(NSString *)chatTemplate;
 - (NSDictionary *)loadSession:(NSString *)path;
 - (int)saveSession:(NSString *)path size:(int)size;

@@ -1,10 +1,8 @@
 #include "models.h"
 
-
-
 llm_build_falcon_h1::llm_build_falcon_h1(const llama_model & model, const llm_graph_params & params) :
-    llm_graph_context_mamba(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
+    llm_build_mamba_base(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
     lm_ggml_tensor * cur;
     lm_ggml_tensor * inpL;
@@ -29,19 +27,8 @@ llm_build_falcon_h1::llm_build_falcon_h1(const llama_model & model, const llm_gr
         cb(cur, "attn_norm", il);
 
         // self-attention
-        lm_ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
-        cb(Qcur, "Qcur", il);
-
-        lm_ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
-        cb(Kcur, "Kcur", il);
-
-        lm_ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
-        cb(Vcur, "Vcur", il);
-
-        Qcur = lm_ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head, n_tokens);
-        Kcur = lm_ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-
-        Vcur = lm_ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+        auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                n_embd_head, n_head, n_head_kv, il);
 
         Qcur = lm_ggml_rope_ext(ctx0, Qcur, inp_pos, nullptr, n_rot, hparams.rope_type, n_ctx_orig, freq_base, freq_scale,
                              ext_factor, attn_factor, beta_fast, beta_slow);
@@ -54,7 +41,7 @@ llm_build_falcon_h1::llm_build_falcon_h1(const llama_model & model, const llm_gr
         cb(Vcur, "Vcur-post-rope", il);
 
         lm_ggml_tensor * attn_out = build_attn(inp->get_attn(),
-                                    model.layers[il].wo, NULL,
+                                    model.layers[il].wo, NULL, model.layers[il].wo_s,
                                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
         cb(attn_out, "attn_out", il);
 

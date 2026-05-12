@@ -25,6 +25,7 @@
 #include "rn-slot-manager.h"
 #include "jni-utils.h"
 #include "common.h"
+#include "chat.h"
 #define UNUSED(x) (void)(x)
 #define TAG "CAPLLAMA_ANDROID_JNI"
 
@@ -60,6 +61,7 @@ static std::vector<lm_ggml_backend_dev_t> get_filtered_default_devices() {
         switch (lm_ggml_backend_dev_type(dev)) {
             case LM_GGML_BACKEND_DEVICE_TYPE_CPU:
             case LM_GGML_BACKEND_DEVICE_TYPE_ACCEL:
+            case LM_GGML_BACKEND_DEVICE_TYPE_META:
                 // skip CPU/ACCEL since handled separately
                 break;
 
@@ -373,7 +375,7 @@ void extract_sampling_params(
         jstring grammar = readablemap::getString(env, params, "grammar", nullptr);
         const char *grammar_chars = env->GetStringUTFChars(grammar, nullptr);
         if (grammar_chars && grammar_chars[0] != '\0') {
-            sparams.grammar = grammar_chars;
+            sparams.grammar = {COMMON_GRAMMAR_TYPE_USER, std::string(grammar_chars)}; // grammar_chars;
         }
         env->ReleaseStringUTFChars(grammar, grammar_chars);
     }
@@ -388,7 +390,7 @@ void extract_sampling_params(
         const char *json_schema_chars = env->GetStringUTFChars(json_schema, nullptr);
         if (json_schema_chars && json_schema_chars[0] != '\0') {
             auto schema = json::parse(json_schema_chars);
-            sparams.grammar = json_schema_to_grammar(schema);
+            sparams.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, json_schema_to_grammar(schema)}; // json_schema_to_grammar(schema);
         }
         env->ReleaseStringUTFChars(json_schema, json_schema_chars);
     }
@@ -756,8 +758,8 @@ Java_com_capllama_LlamaContext_initContext(
         cb_ctx->callback = env->NewGlobalRef(load_progress_callback);
         defaultParams.progress_callback_user_data = cb_ctx;
     }
-
-    auto sysinfo = common_params_get_system_info(defaultParams).c_str();
+    std::string sysinfo_str = common_params_get_system_info(defaultParams);
+    auto sysinfo = sysinfo_str.c_str();
     LLAMA_LOG("System Info: %s", sysinfo);
 
     bool is_model_loaded = llama->loadModel(defaultParams);
@@ -840,20 +842,20 @@ Java_com_capllama_LlamaContext_initContext(
             }
         }
     }
-    int result = llama->applyLoraAdapters(lora);
+    try {
+        llama->applyLoraAdapters(lora);
+    } catch (const std::exception& e) {
+        LOGI("[CapLlama] Failed to apply lora adapters: %s", e.what());
+        context_map.erase((long) llama->ctx);
+        delete llama;
+        auto error_result = writablemap::createWriteableMap(env);
+        writablemap::putString(env, error_result, "_error", "Failed to apply lora adapters");
+        return error_result;
+    }
 
     // Cleanup lora string resources
     if (lora_str && lora_chars) {
         env->ReleaseStringUTFChars(lora_str, lora_chars);
-    }
-
-    if (result != 0) {
-      LOGI("[CapLlama] Failed to apply lora adapters");
-      context_map.erase((long) llama->ctx);
-      delete llama;
-      auto error_result = writablemap::createWriteableMap(env);
-      writablemap::putString(env, error_result, "_error", "Failed to apply lora adapters");
-      return error_result;
     }
 
     bool gpu_used = false;
@@ -876,14 +878,14 @@ Java_com_capllama_LlamaContext_initContext(
         }
     }
 
-    if (llama->llama_init.model) {
-        const auto &model_devices = llama->llama_init.model->devices;
+    if (llama->llama_init->model()) {
+        const auto &model_devices = llama->llama_init->model()->devices;
         for (auto dev : model_devices) {
-            auto dev_type = lm_ggml_backend_dev_type(dev);
+            auto dev_type = lm_ggml_backend_dev_type(dev.dev);
             if (dev_type == LM_GGML_BACKEND_DEVICE_TYPE_GPU || dev_type == LM_GGML_BACKEND_DEVICE_TYPE_IGPU) {
                 gpu_used = true;
             }
-            const char *used_name = lm_ggml_backend_dev_name(dev);
+            const char *used_name = lm_ggml_backend_dev_name(dev.dev);
             if (used_name != nullptr) {
                 writablearray::pushString(env, used_devices, used_name);
             }
@@ -992,9 +994,9 @@ Java_com_capllama_LlamaContext_loadModelDetails(
     writablemap::putBoolean(env, default_caps, "tools", default_tmpl_caps.supports_tools);
     writablemap::putBoolean(env, default_caps, "toolCalls", default_tmpl_caps.supports_tool_calls);
     writablemap::putBoolean(env, default_caps, "parallelToolCalls", default_tmpl_caps.supports_parallel_tool_calls);
-    writablemap::putBoolean(env, default_caps, "toolResponses", default_tmpl_caps.supports_tool_responses);
+    // writablemap::putBoolean(env, default_caps, "toolResponses", default_tmpl_caps.supports_tool_responses);
     writablemap::putBoolean(env, default_caps, "systemRole", default_tmpl_caps.supports_system_role);
-    writablemap::putBoolean(env, default_caps, "toolCallId", default_tmpl_caps.supports_tool_call_id);
+    // writablemap::putBoolean(env, default_caps, "toolCallId", default_tmpl_caps.supports_tool_call_id);
     writablemap::putMap(env, minja, "defaultCaps", default_caps);
 
     writablemap::putBoolean(env, minja, "toolUse", llama->validateModelChatTemplate(true, "tool_use"));
@@ -1006,8 +1008,8 @@ Java_com_capllama_LlamaContext_loadModelDetails(
       writablemap::putBoolean(env, tool_use_caps, "toolCalls", tool_use_tmpl_caps.supports_tool_calls);
       writablemap::putBoolean(env, tool_use_caps, "parallelToolCalls", tool_use_tmpl_caps.supports_parallel_tool_calls);
       writablemap::putBoolean(env, tool_use_caps, "systemRole", tool_use_tmpl_caps.supports_system_role);
-      writablemap::putBoolean(env, tool_use_caps, "toolResponses", tool_use_tmpl_caps.supports_tool_responses);
-      writablemap::putBoolean(env, tool_use_caps, "toolCallId", tool_use_tmpl_caps.supports_tool_call_id);
+      // writablemap::putBoolean(env, tool_use_caps, "toolResponses", tool_use_tmpl_caps.supports_tool_responses);
+      // writablemap::putBoolean(env, tool_use_caps, "toolCallId", tool_use_tmpl_caps.supports_tool_call_id);
       writablemap::putMap(env, minja, "toolUseCaps", tool_use_caps);
     }
 
@@ -1048,6 +1050,10 @@ Java_com_capllama_LlamaContext_getFormattedChatWithJinja(
     jstring tool_choice = readablemap::hasKey(env, params, "tool_choice") ?
         readablemap::getString(env, params, "tool_choice", nullptr) : nullptr;
     const char *tool_choice_chars = tool_choice ? env->GetStringUTFChars(tool_choice, nullptr) : "";
+
+    jstring reasoning_format = readablemap::hasKey(env, params, "reasoning_format") ?
+        readablemap::getString(env, params, "reasoning_format", nullptr) : nullptr;
+    const char *reasoning_format_chars = reasoning_format ? env->GetStringUTFChars(reasoning_format, nullptr) : "";
 
     jstring now_str = readablemap::hasKey(env, params, "now_str") ?
         readablemap::getString(env, params, "now_str", nullptr) : nullptr;
@@ -1091,6 +1097,7 @@ Java_com_capllama_LlamaContext_getFormattedChatWithJinja(
             parallel_tool_calls,
             tool_choice_chars,
             enable_thinking,
+            reasoning_format_chars,
             add_generation_prompt,
             now_chars,
             kwargs_map
@@ -1107,7 +1114,7 @@ Java_com_capllama_LlamaContext_getFormattedChatWithJinja(
             writablemap::putInt(env, trigger_map, "token", trigger.token);
             writablearray::pushMap(env, grammar_triggers, trigger_map);
         }
-        writablemap::putBoolean(env, result, "thinking_forced_open", formatted.thinking_forced_open);
+        writablemap::putBoolean(env, result, "thinking_forced_open", false); //formatted.thinking_forced_open);
         writablemap::putArray(env, result, "grammar_triggers", grammar_triggers);
         auto preserved_tokens = writablearray::createWritableArray(env);
         for (const auto &token : formatted.preserved_tokens) {
@@ -1449,12 +1456,25 @@ Java_com_capllama_LlamaContext_doCompletion(
     }
 
     // Extract thinking_forced_open if provided (defaults to false)
-    jboolean thinking_forced_open = false;
-    if (readablemap::hasKey(env, params, "thinking_forced_open")) {
-        thinking_forced_open = readablemap::getBool(env, params, "thinking_forced_open", false);
+    // jboolean thinking_forced_open = false;
+    // if (readablemap::hasKey(env, params, "thinking_forced_open")) {
+    //     thinking_forced_open = readablemap::getBool(env, params, "thinking_forced_open", false);
+    // }
+
+    std::string generation_prompt_str = "";
+    jstring generation_prompt_jstr = nullptr;
+    if (readablemap::hasKey(env, params, "generation_prompt")) {
+        generation_prompt_jstr = readablemap::getString(env, params, "generation_prompt", nullptr);
+        if (generation_prompt_jstr) {
+            const char *generation_prompt_chars = env->GetStringUTFChars(generation_prompt_jstr, nullptr);
+            if (generation_prompt_chars) {
+                generation_prompt_str = generation_prompt_chars;
+                env->ReleaseStringUTFChars(generation_prompt_jstr, generation_prompt_chars);
+            }
+        }
     }
 
-    llama->completion->beginCompletion(chat_format, reasoning_format_enum, thinking_forced_open);
+    llama->completion->beginCompletion(chat_format, reasoning_format_enum, generation_prompt_str); // thinking_forced_open);
     try {
         llama->completion->loadPrompt(media_paths_vector);
     } catch (const std::exception &e) {
@@ -1924,7 +1944,17 @@ Java_com_capllama_LlamaContext_applyLoraAdapters(
           lora_adapters.push_back(la);
         }
     }
-    return llama->applyLoraAdapters(lora_adapters);
+    try {
+        llama->applyLoraAdapters(lora_adapters);
+        return 0;
+    } catch (const std::exception &e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Error applying LoRA adapters: %s", e.what());
+        return -1;
+    } catch (const std::runtime_error& e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Runtime error applying LoRA adapters: %s", e.what());
+        return -1;
+    }
+
 }
 
 JNIEXPORT void JNICALL
@@ -2364,9 +2394,35 @@ Java_com_capllama_LlamaContext_doQueueCompletion(
             }
         }
 
-        jboolean thinking_forced_open = false;
-        if (readablemap::hasKey(env, params_map, "thinking_forced_open")) {
-            thinking_forced_open = readablemap::getBool(env, params_map, "thinking_forced_open", false);
+        // jboolean thinking_forced_open = false;
+        // if (readablemap::hasKey(env, params_map, "thinking_forced_open")) {
+        //     thinking_forced_open = readablemap::getBool(env, params_map, "thinking_forced_open", false);
+        // }
+
+        std::string generation_prompt_str = "";
+        jstring generation_prompt_jstr = nullptr;
+        if (readablemap::hasKey(env, params_map, "generation_prompt")) {
+            generation_prompt_jstr = readablemap::getString(env, params_map, "generation_prompt", nullptr);
+            if (generation_prompt_jstr) {
+                const char *generation_prompt_chars = env->GetStringUTFChars(generation_prompt_jstr, nullptr);
+                if (generation_prompt_chars) {
+                    generation_prompt_str = generation_prompt_chars;
+                    env->ReleaseStringUTFChars(generation_prompt_jstr, generation_prompt_chars);
+                }
+            }
+        }
+        
+        std::string chat_parser_str = "";
+        jstring chat_parser_jstr = nullptr;
+        if (readablemap::hasKey(env, params_map, "chat_parser")) {
+            chat_parser_jstr = readablemap::getString(env, params_map, "chat_parser", nullptr);
+            if (chat_parser_jstr) {
+                const char *chat_parser_chars = env->GetStringUTFChars(chat_parser_jstr, nullptr);
+                if (chat_parser_chars) {
+                    chat_parser_str = chat_parser_chars;
+                    env->ReleaseStringUTFChars(chat_parser_jstr, chat_parser_chars);
+                }
+            }
         }
 
         // Extract prefill_text
@@ -2585,6 +2641,8 @@ Java_com_capllama_LlamaContext_doQueueCompletion(
         // Extract state paths
         std::string load_state_path;
         std::string save_state_path;
+        std::string save_prompt_state_path;
+        int32_t load_state_size = -1;
         int32_t save_state_size = -1;
 
         if (readablemap::hasKey(env, params_map, "load_state_path")) {
@@ -2625,10 +2683,13 @@ Java_com_capllama_LlamaContext_doQueueCompletion(
             prompt_chars,
             chat_format,
             reasoning_format_enum,
-            thinking_forced_open,
+            generation_prompt_str,
+            chat_parser_str,
             prefill_text_str,
             load_state_path,
             save_state_path,
+            save_prompt_state_path,
+            load_state_size,
             save_state_size,
             on_token,
             on_complete

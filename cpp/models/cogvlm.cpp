@@ -2,13 +2,15 @@
 
 llm_build_cogvlm::llm_build_cogvlm(const llama_model & model, const llm_graph_params & params) :
     llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
-    float         kq_scale    = 1.0f / sqrtf(float(n_embd_head));
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+    const float   kq_scale    = 1.0f / sqrtf(float(n_embd_head));
 
-    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
-    LM_GGML_ASSERT(n_embd_head == hparams.n_rot);
+    LM_GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    LM_GGML_ASSERT(n_embd_head == n_rot);
 
-    lm_ggml_tensor *inpL, *cur;
+    lm_ggml_tensor * inpL;
+    lm_ggml_tensor * cur;
+
     inpL = build_inp_embd(model.tok_embd);
 
     lm_ggml_tensor * inp_pos = build_inp_pos();
@@ -26,25 +28,27 @@ llm_build_cogvlm::llm_build_cogvlm(const llama_model & model, const llm_graph_pa
 
     for (int il = 0; il < n_layer; ++il) {
         // get either the text or image weight tensors
-        lm_ggml_tensor *wqkv, *wo;
+        lm_ggml_tensor *wqkv, *wo, *wo_s;
         lm_ggml_tensor *ffn_gate, *ffn_down, *ffn_up;
 
         if (is_text) {
             wqkv     = model.layers[il].wqkv;
             wo       = model.layers[il].wo;
+            wo_s     = model.layers[il].wo_s;
             ffn_gate = model.layers[il].ffn_gate;
             ffn_down = model.layers[il].ffn_down;
             ffn_up   = model.layers[il].ffn_up;
         } else {
             wqkv     = model.layers[il].visexp_attn_wqkv;
             wo       = model.layers[il].visexp_attn_wo;
+            wo_s     = nullptr;
             ffn_gate = model.layers[il].visexp_ffn_gate;
             ffn_down = model.layers[il].visexp_ffn_down;
             ffn_up   = model.layers[il].visexp_ffn_up;
         }
 
         lm_ggml_tensor * inpSA = inpL;
-        cur                 = build_norm(inpSA, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, il);
+        cur = build_norm(inpSA, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, il);
 
         // build self attention
         {
@@ -62,7 +66,7 @@ llm_build_cogvlm::llm_build_cogvlm(const llama_model & model, const llm_graph_pa
             Kcur = lm_ggml_rope(ctx0, Kcur, inp_pos, n_embd_head, rope_type);
 
             cur = build_attn(inp_attn,
-                wo, nullptr,
+                wo, nullptr, wo_s,
                 Qcur, Kcur, Vcur,
                 nullptr, nullptr, nullptr,
                 kq_scale, il);
@@ -84,6 +88,10 @@ llm_build_cogvlm::llm_build_cogvlm(const llama_model & model, const llm_graph_pa
         cur = lm_ggml_add(ctx0, cur, ffn_inp);
         cb(cur, "ffn_out", il);
 
+        cur = build_cvec(cur, il);
+        cb(cur, "l_out", il);
+
+        // input for next layer
         inpL = cur;
     }
 
