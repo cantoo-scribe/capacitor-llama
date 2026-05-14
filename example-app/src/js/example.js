@@ -1,6 +1,9 @@
 // @ts-check
 import { LlamaContext, Llama } from '@cantoo/capacitor-llama';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
+
+const platform = Capacitor.getPlatform(); 
 
 function showBtn(id) {
   const btn = document.getElementById(id)
@@ -139,6 +142,7 @@ window.completion = async () => {
   })
 }
 
+// @ts-ignore
 window.releaseModel = async () => {
   await context.release()
   clearChat()
@@ -146,6 +150,17 @@ window.releaseModel = async () => {
   hideBtn('releaseModel')
 }
 
+;(async () => {
+  if (platform === 'android') {
+    await Filesystem.stat({
+      path: 'Qwen2.5-0.5B-Instruct-Q5_K_S.gguf',
+      directory: Directory.Documents,
+    }).then(() => {
+      hideBtn('downloadModel')
+      console.log('the model is ready')
+    }).catch(() => console.log('the model is missing'))
+  }
+})()
 
-// hideBtn('releaseModel')
+hideBtn('releaseModel')
 // hideBtn('downloadModel')

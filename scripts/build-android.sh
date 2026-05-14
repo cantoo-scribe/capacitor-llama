@@ -160,9 +160,8 @@ done
 
 mkdir -p jniLibs/arm64-v8a
 
-# Copy the shared libraries
+# Copy the unified shared library (now includes both capllama and JNI wrapper)
 cp build-arm64/*.so jniLibs/arm64-v8a/
-cp build-arm64/capllama/*.so jniLibs/arm64-v8a/
 
 rm -rf build-arm64
 
