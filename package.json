@@ -48,7 +48,10 @@
     "prepublishOnly": "npm run build",
     "build-electron": "tsc --project electron/tsconfig.json && rollup -c electron/rollup.config.mjs && rimraf ./electron/build",
     "buildLib:android": "./scripts/build-android.sh",
-    "buildLib:ios": "./scripts/build-ios.sh"
+    "buildLib:ios": "./scripts/build-ios.sh",
+    "gh-release": "./scripts/gh-release.sh",
+    "release": "release-it",
+    "release:next": "release-it --preRelease=next"
   },
   "publishConfig": {
     "access": "public"
