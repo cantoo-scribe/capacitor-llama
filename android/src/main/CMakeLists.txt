@@ -285,7 +285,7 @@ endfunction()
 # Build unified targets for supported architectures
 if (ANDROID_ABI AND ANDROID_ABI STREQUAL "arm64-v8a")
     # ARM64 targets - unified .so files with both capllama and JNI
-    # build_capllama_unified("capllama_jni_v8" "arm" "-march=armv8-a")
+    build_capllama_unified("capllama_jni_v8" "arm" "-march=armv8-a")
     # build_capllama_unified("capllama_jni_v8_2" "arm" "-march=armv8.2-a")
     # build_capllama_unified("capllama_jni_v8_2_dotprod" "arm" "-march=armv8.2-a+dotprod")
     # build_capllama_unified("capllama_jni_v8_2_i8mm" "arm" "-march=armv8.2-a+i8mm")
@@ -294,6 +294,6 @@ if (ANDROID_ABI AND ANDROID_ABI STREQUAL "arm64-v8a")
 
 elseif (ANDROID_ABI AND ANDROID_ABI STREQUAL "x86_64")
     # x86_64 target - unified .so file
-    # build_capllama_unified("capllama_jni_x86_64" "x86" "-march=x86-64;-mtune=generic;-msse4.2;-mpopcnt")
+    build_capllama_unified("capllama_jni_x86_64" "x86" "-march=x86-64;-mtune=generic;-msse4.2;-mpopcnt")
 
 endif ()

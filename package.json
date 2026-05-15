@@ -47,7 +47,8 @@
     "watch": "tsc --watch",
     "prepublishOnly": "npm run build",
     "build-electron": "tsc --project electron/tsconfig.json && rollup -c electron/rollup.config.mjs && rimraf ./electron/build",
-    "buildLib": "./scripts/build-android.sh"
+    "buildLib:android": "./scripts/build-android.sh",
+    "buildLib:ios": "./scripts/build-ios.sh"
   },
   "publishConfig": {
     "access": "public"

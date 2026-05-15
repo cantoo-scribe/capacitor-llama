@@ -167,35 +167,27 @@ rm -rf build-arm64
 
 # Build the Android library (x86_64)
 echo "Building x86_64 prebuilt shared libraries..."
-# $CMAKE_PATH -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
-#   -DANDROID_ABI=x86_64 \
-#   -DANDROID_PLATFORM=$ANDROID_PLATFORM \
-#   -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-#   -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
-#   -B build-x86_64
+$CMAKE_PATH -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
+  -DANDROID_ABI=x86_64 \
+  -DANDROID_PLATFORM=$ANDROID_PLATFORM \
+  -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+  -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
+  -B build-x86_64
 
-# $CMAKE_PATH --build build-x86_64 --config Release -j $n_cpu
-
-# Strip debug symbols from libraries
-# STRIP=$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/*/bin/llvm-strip
-# for lib in build-x86_64/*.so; do
-#   echo "Stripping $(basename $lib)..."
-#   $STRIP $lib
-# done
-
-# mkdir -p ../jniLibs/x86_64
+$CMAKE_PATH --build build-x86_64 --config Release -j $n_cpu
 
 # Strip debug symbols from libraries
-# STRIP=$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/*/bin/llvm-strip
-# for lib in build-x86_64/*.so; do
-#   echo "Stripping $(basename $lib)..."
-#   $STRIP $lib
-# done
+for lib in build-x86_64/*.so; do
+  echo "Stripping $(basename $lib)..."
+  $STRIP $lib
+done
+
+mkdir -p jniLibs/x86_64
 
 # Copy the shared libraries
-# cp build-x86_64/*.so ../jniLibs/x86_64/
+cp build-x86_64/*.so jniLibs/x86_64/
 
-# rm -rf build-x86_64
+rm -rf build-x86_64
 
 t1=$(date +%s)
 echo "Total time: $((t1 - t0)) seconds"

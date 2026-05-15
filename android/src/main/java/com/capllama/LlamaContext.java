@@ -66,58 +66,57 @@ public class LlamaContext {
         // eventEmitter = reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class);
         this.id = id;
 
-       JSObject initResult = initContext(
-           params,
-           // LoadProgressCallback load_progress_callback
-           // params.hasKey("use_progress_callback") ? new LoadProgressCallback(this) : null
-           null
-       );
+        JSObject initResult = initContext(
+            params,
+            // LoadProgressCallback load_progress_callback
+            // params.hasKey("use_progress_callback") ? new LoadProgressCallback(this) : null
+            null
+        );
 
-       if (initResult == null) {
-           throw new IllegalStateException("Failed to initialize context");
-       }
-       if (initResult.has("_error")) {
-           throw new IllegalStateException(initResult.getString("_error"));
-       }
-       if (!initResult.has("context")) {
-           throw new IllegalStateException("Failed to initialize context");
-       }
-       String contextPtr = initResult.getString("context");
-       if (contextPtr == null || contextPtr.isEmpty()) {
-           throw new IllegalStateException("Failed to initialize context");
-       }
-       try {
-           this.context = Long.parseLong(contextPtr);
-       } catch (NumberFormatException numberFormatException) {
-           throw new IllegalStateException("Invalid native context pointer", numberFormatException);
-       }
-       if (this.context == 0) {
-           throw new IllegalStateException("Failed to initialize context");
-       }
+        if (initResult == null) {
+            throw new IllegalStateException("Failed to initialize context");
+        }
+        if (initResult.has("_error")) {
+            throw new IllegalStateException(initResult.getString("_error"));
+        }
+        if (!initResult.has("context")) {
+            throw new IllegalStateException("Failed to initialize context");
+        }
+        String contextPtr = initResult.getString("context");
+        if (contextPtr == null || contextPtr.isEmpty()) {
+            throw new IllegalStateException("Failed to initialize context");
+        }
+        try {
+            this.context = Long.parseLong(contextPtr);
+        } catch (NumberFormatException numberFormatException) {
+            throw new IllegalStateException("Invalid native context pointer", numberFormatException);
+        }
+        if (this.context == 0) {
+            throw new IllegalStateException("Failed to initialize context");
+        }
 
-       this.gpuEnabled = initResult.has("gpu") && initResult.getBoolean("gpu", false);
-       this.reasonNoGPU = initResult.has("reasonNoGPU") ? initResult.getString("reasonNoGPU") : "";
-       if (this.reasonNoGPU == null) {
-           this.reasonNoGPU = "";
-       }
-       if (!this.gpuEnabled && params.has("no_gpu_devices") && params.getBoolean("no_gpu_devices", false)) {
-           this.reasonNoGPU = "GPU devices disabled by user";
-       }
-       if (initResult.has("devices")) {
-           try {
-               this.devices = JSArray.from(initResult.getJSONArray("devices"));
-           } catch (JSONException ignored) {
-           }
-       }
-       this.systemInfo = initResult.has("systemInfo") ? initResult.getString("systemInfo") : "";
-       if (this.systemInfo == null) {
-           this.systemInfo = "";
-       }
+        this.gpuEnabled = initResult.has("gpu") && initResult.getBoolean("gpu", false);
+        this.reasonNoGPU = initResult.has("reasonNoGPU") ? initResult.getString("reasonNoGPU") : "";
+        if (this.reasonNoGPU == null) {
+            this.reasonNoGPU = "";
+        }
+        if (!this.gpuEnabled && params.has("no_gpu_devices") && params.getBoolean("no_gpu_devices", false)) {
+            this.reasonNoGPU = "GPU devices disabled by user";
+        }
+        if (initResult.has("devices")) {
+            try {
+                this.devices = JSArray.from(initResult.getJSONArray("devices"));
+            } catch (JSONException ignored) {}
+        }
+        this.systemInfo = initResult.has("systemInfo") ? initResult.getString("systemInfo") : "";
+        if (this.systemInfo == null) {
+            this.systemInfo = "";
+        }
 
-       if (this.context == -1) {
-           throw new IllegalStateException("Failed to initialize context");
-       }
-       this.modelDetails = loadModelDetails(this.context);
+        if (this.context == -1) {
+            throw new IllegalStateException("Failed to initialize context");
+        }
+        this.modelDetails = loadModelDetails(this.context);
     }
 
     public void interruptLoad() {
@@ -137,12 +136,7 @@ public class LlamaContext {
     }
 
     public JSObject getFormattedChatWithJinja(String messages, String chatTemplate, JSObject params) {
-        return getFormattedChatWithJinja(
-            this.context,
-            messages,
-            chatTemplate == null ? "" : chatTemplate,
-            params
-        );
+        return getFormattedChatWithJinja(this.context, messages, chatTemplate == null ? "" : chatTemplate, params);
     }
 
     public String getFormattedChat(String messages, String chatTemplate) {
@@ -202,11 +196,7 @@ public class LlamaContext {
         if (!params.has("prompt")) {
             throw new IllegalArgumentException("Missing required parameter: prompt");
         }
-        JSObject result = doCompletion(
-            this.context,
-            params,
-            callback
-        );
+        JSObject result = doCompletion(this.context, params, callback);
         if (result.has("error")) {
             throw new IllegalStateException(result.getString("error"));
         }
@@ -387,12 +377,7 @@ public class LlamaContext {
 
     protected static native JSObject loadModelDetails(long contextPtr);
 
-    protected static native JSObject getFormattedChatWithJinja(
-        long contextPtr,
-        String messages,
-        String chatTemplate,
-        JSObject params
-    );
+    protected static native JSObject getFormattedChatWithJinja(long contextPtr, String messages, String chatTemplate, JSObject params);
 
     protected static native String getFormattedChat(long contextPtr, String messages, String chatTemplate);
 
@@ -405,11 +390,7 @@ public class LlamaContext {
     //   String path,
     //   int size
     // );
-    protected static native JSObject doCompletion(
-        long context_ptr,
-        JSObject params,
-        PartialCompletionCallback partial_completion_callback
-    );
+    protected static native JSObject doCompletion(long context_ptr, JSObject params, PartialCompletionCallback partial_completion_callback);
 
     protected static native void stopCompletion(long contextPtr);
 
