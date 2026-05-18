@@ -75,7 +75,7 @@ export class ElectronLlama implements CapacitorLlamaPlugin {
         .filter((m) => !!m);
       await session.setChatHistory(history);
       const prompt = lastMessage.content;
-      if (!prompt) throw new Error('prompt missing');
+      if (!prompt && lastMessage.role === 'user') throw new Error('prompt missing');
       const result = await session
         .prompt(prompt, {
           maxTokens: params.n_predict,

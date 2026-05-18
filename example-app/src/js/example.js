@@ -89,6 +89,7 @@ window.loadModel = async () => {
 
   hideBtn('loadModel')
   showBtn('releaseModel')
+  showBtn('sendMessage')
   console.log('loaded model: ', context.model)
   console.log('result', context.id, context.model.desc, context.model.size, context.model.nVocab)
   } catch (err) {
@@ -180,9 +181,11 @@ window.releaseModel = async () => {
   clearChat()
   showBtn('loadModel')
   hideBtn('releaseModel')
+  hideBtn('sendMessage')
 }
 
 ;(async () => {
+  console.log('platform: ', platform)
   if (platform === 'android') {
     // await Filesystem.deleteFile({
     //   path: models[modelName].path,
@@ -197,8 +200,11 @@ window.releaseModel = async () => {
       hideBtn('downloadModel')
       console.log('the model is ready')
     }).catch(() => console.log('the model is missing'))
+  } else if (platform === 'electron') {
+    hideBtn('downloadModel')
   }
 })()
 
 hideBtn('releaseModel')
+hideBtn('sendMessage')
 // hideBtn('downloadModel')
