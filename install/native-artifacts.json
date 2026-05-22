@@ -1,0 +1,11 @@
+{
+  "artifacts": [
+    {
+      "name": "android-jni-libs",
+      "assetName": "capllama-android-jni-libs.zip",
+      "relativePath": "android/src/main/jniLibs",
+      "markerPath": "android/src/main/jniLibs/.capllama.sha256",
+      "sha256": "606c2a45e5360e818acf48e3898406516b7680e5da49ed3362eaa5d2c9167421"
+    }
+  ]
+}

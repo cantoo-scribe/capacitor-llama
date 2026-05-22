@@ -7,6 +7,8 @@
   "types": "dist/esm/index.d.ts",
   "unpkg": "dist/plugin.js",
   "files": [
+    "install/download-native-artifacts.js",
+    "install/native-artifacts.json",
     "android/src/main/",
     "android/build.gradle",
     "dist/",
@@ -45,6 +47,7 @@
     "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs && npm run build-electron",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
+    "postinstall": "node ./install/download-native-artifacts.js",
     "prepublishOnly": "npm run build",
     "build-electron": "tsc --project electron/tsconfig.json && rollup -c electron/rollup.config.mjs && rimraf ./electron/build",
     "buildLib:android": "./scripts/build-android.sh",
