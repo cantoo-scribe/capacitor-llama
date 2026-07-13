@@ -13,12 +13,16 @@ const models = {
   },
   'qwen3.5-0.8b': {
     path: 'Qwen3.5-0.8B-Q5_K_M.gguf',
-    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q5_K_M.gguf?download=true'
+    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q5_K_M.gguf'
+  },
+  'gpt-pt':{
+    path: "fine-tuned-gpt2-portuguese-q8_0.gguf",
+    url: "https://huggingface.co/Matheusrdsantos/fine-tuned-gpt2-portuguese-GGUF/resolve/main/fine-tuned-gpt2-portuguese-q8_0.gguf",
   }
 }
 
 /** @type { keyof models } */
-const modelName = 'qwen3.5-0.8b'
+const modelName = 'gpt-pt'
 
 function showBtn(id) {
   const btn = document.getElementById(id)
@@ -81,8 +85,8 @@ window.loadModel = async () => {
     // model: /path/to/model.gguf,
     // for browser
     // model: models[modelName].url,
-    use_mlock: true,
-    n_ctx: 2048,
+    // use_mlock: true,
+    n_ctx: 512,
     n_gpu_layers: 0,
     
   })
@@ -186,20 +190,81 @@ window.releaseModel = async () => {
 
 ;(async () => {
   console.log('platform: ', platform)
-  if (platform === 'android') {
+  if (platform === 'android' || platform === 'ios') {
     // await Filesystem.deleteFile({
     //   path: models[modelName].path,
     //   directory,
     // }).then(() => console.log('model file deleted successfully'))
     //   .catch(() => console.log('error occurred while deleting the model file'))
     
-    Filesystem.stat({
+    const hasModel = await Filesystem.stat({
       path: models[modelName].path,
       directory,
-    }).then(() => {
+    }).catch(() => { 
+      console.log('the model is missing')
+      return false
+    })
+
+    if (hasModel) {
       hideBtn('downloadModel')
       console.log('the model is ready')
-    }).catch(() => console.log('the model is missing'))
+      // @ts-ignore
+      await window.loadModel()
+      // @ts-ignore
+      const tokens = await context.getVocab()
+      console.log('tokens', tokens)
+      // @ts-ignore
+      window.tokens = tokens
+      let bias = []
+      let i = 0
+      for (const token of tokens.vocab) {
+        const rawText = token
+        const tkNumber = i++
+        // allow only token 128
+        if (rawText.startsWith(' novo')) {
+          continue
+        }
+        bias.push([tkNumber, false])
+      }
+      // @ts-ignore
+      await context.completion({
+        prompt: "teste",
+        n_predict: 1,
+        // n_probs: 3,
+        // @ts-ignore
+        logit_bias: bias
+      }).then(result => {
+        console.log('result', result)
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      bias = []
+      i = 0
+      for (const token of tokens.vocab) {
+        const rawText = token
+        const tkNumber = i++
+        // allow only token 256
+        if (rawText.startsWith(' casa')) {
+          continue
+        }
+        bias.push([tkNumber, false])
+      }
+
+      // @ts-ignore
+      await context.completion({
+        prompt: "nova",
+        n_predict: 1,
+        // n_probs: 3,
+        // @ts-ignore
+        logit_bias: bias
+      }).then(result => {
+        console.log('result 2', result)
+      })
+    } else {
+      showBtn('downloadModel')
+    }
+  
   } else if (platform === 'electron') {
     hideBtn('downloadModel')
   }

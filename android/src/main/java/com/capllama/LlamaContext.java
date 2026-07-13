@@ -212,9 +212,7 @@ public class LlamaContext {
     // }
 
     public JSObject tokenize(String text) {
-        JSObject result = new JSObject();
-        result.put("tokens", tokenize(this.context, text, new String[0]));
-        return result;
+        return tokenize(this.context, text, new String[0]);
     }
 
     public String detokenize(JSObject params) {
@@ -395,7 +393,7 @@ public class LlamaContext {
     protected static native void stopCompletion(long contextPtr);
 
     // protected static native boolean isPredicting(long contextPtr);
-    protected static native JSArray tokenize(long contextPtr, String text, String[] media_paths);
+    protected static native JSObject tokenize(long contextPtr, String text, String[] media_paths);
 
     protected static native String detokenize(long contextPtr, int[] tokens);
 

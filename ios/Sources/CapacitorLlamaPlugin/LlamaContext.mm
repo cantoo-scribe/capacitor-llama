@@ -878,6 +878,7 @@
     if (reasoningContent) result[@"reasoning_content"] = reasoningContent;
     if (toolCalls && toolCalls.count > 0) result[@"tool_calls"] = toolCalls;
     result[@"completion_probabilities"] = [self tokenProbsToDict:llama->completion->generated_token_probs];
+    llama->completion->generated_token_probs.clear();
     result[@"tokens_predicted"] = @(llama->completion->num_tokens_predicted);
     result[@"tokens_evaluated"] = @(llama->completion->num_prompt_tokens);
     result[@"truncated"] = @(llama->completion->truncated);

@@ -67,8 +67,14 @@ inline int size(JNIEnv *env, jobject readableArray) {
 
 inline jobject getMap(JNIEnv *env, jobject readableArray, int index) {
     jclass arrayClass = env->GetObjectClass(readableArray);
-    jmethodID getMapMethod = env->GetMethodID(arrayClass, "getJSObject", "(I)Lcom/getcapacitor/JSObject;");
+    jmethodID getMapMethod = env->GetMethodID(arrayClass, "getJSONObject", "(I)Lorg/json/JSONObject;");
     return env->CallObjectMethod(readableArray, getMapMethod, index);
+}
+
+inline jobject getArray(JNIEnv *env, jobject readableArray, int index) {
+    jclass arrayClass = env->GetObjectClass(readableArray);
+    jmethodID getArrayMethod = env->GetMethodID(arrayClass, "getJSONArray", "(I)Lorg/json/JSONArray;");
+    return env->CallObjectMethod(readableArray, getArrayMethod, index);
 }
 
 inline jstring getString(JNIEnv *env, jobject readableArray, int index) {

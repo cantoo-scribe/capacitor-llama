@@ -410,32 +410,55 @@ void extract_sampling_params(
     }
 
     // Logit bias
+    sparams.logit_bias.clear();
+    const struct llama_vocab *vocab = llama_model_get_vocab(llama->model);
+    const int n_vocab = llama_vocab_n_tokens(vocab);
+
+    if (readablemap::hasKey(env, params, "ignore_eos") && readablemap::getBool(env, params, "ignore_eos", false)) {
+        sparams.logit_bias.push_back({llama_vocab_eos(vocab), -INFINITY});
+    }
+
     if (readablemap::hasKey(env, params, "logit_bias")) {
         jobject logit_bias_array = readablemap::getArray(env, params, "logit_bias");
 
         int size = readablearray::size(env, logit_bias_array);
         for (int i = 0; i < size; i++) {
-            jobject row_array = readablearray::getMap(env, logit_bias_array, i);
+            jobject row_array = readablearray::getArray(env, logit_bias_array, i);
+            if (row_array == nullptr || readablearray::size(env, row_array) != 2) {
+                continue;
+            }
+
             jclass arrayClass = env->GetObjectClass(row_array);
+            jmethodID getIntMethod = env->GetMethodID(arrayClass, "getInt", "(I)I");
+            jmethodID getMethod = env->GetMethodID(arrayClass, "get", "(I)Ljava/lang/Object;");
             jmethodID getDoubleMethod = env->GetMethodID(arrayClass, "getDouble", "(I)D");
 
-            jint tok = (jint) env->CallDoubleMethod(row_array, getDoubleMethod, 0);
-            jdouble bias_d = env->CallDoubleMethod(row_array, getDoubleMethod, 1);
+            const llama_token tok = env->CallIntMethod(row_array, getIntMethod, 0);
+            if (tok < 0 || tok >= n_vocab) {
+                continue;
+            }
 
+            jobject bias_val = env->CallObjectMethod(row_array, getMethod, 1);
+            if (bias_val == nullptr) {
+                continue;
+            }
+
+            jclass boolClass = env->FindClass("java/lang/Boolean");
+            if (env->IsInstanceOf(bias_val, boolClass)) {
+                jmethodID booleanValue = env->GetMethodID(boolClass, "booleanValue", "()Z");
+                if (!env->CallBooleanMethod(bias_val, booleanValue)) {
+                    sparams.logit_bias.push_back({tok, -INFINITY});
+                    continue;
+                }
+            }
+
+            const jdouble bias_d = env->CallDoubleMethod(row_array, getDoubleMethod, 1);
             if (std::isfinite(bias_d)) {
-                // maybe sparams.logit_bias.push_back({tok, static_cast<float>(doubleArray[1])});
-                sparams.logit_bias[tok].bias = bias_d;
+                sparams.logit_bias.push_back({tok, static_cast<float>(bias_d)});
             } else {
-                // maybe sparams.logit_bias.push_back({tok, -INFINITY});
-                sparams.logit_bias[tok].bias = -INFINITY;
+                sparams.logit_bias.push_back({tok, -INFINITY});
             }
         }
-    }
-
-    // Ignore EOS logit bias
-    if (readablemap::hasKey(env, params, "ignore_eos") && readablemap::getBool(env, params, "ignore_eos", false)) {
-        const struct llama_vocab *vocab = llama_model_get_vocab(llama->model);
-        sparams.logit_bias[llama_vocab_eos(vocab)].bias = -INFINITY;
     }
 
     // Set preserved_tokens if provided
@@ -1636,6 +1659,7 @@ Java_com_capllama_LlamaContext_doCompletion(
         writablemap::putArray(env, result, "audio_tokens", tokensToArray(env, llama, audio_tokens));
     }
     writablemap::putArray(env, result, "completion_probabilities", tokenProbsToMap(env, llama, llama->completion->generated_token_probs));
+    llama->completion->generated_token_probs.clear();
     writablemap::putInt(env, result, "tokens_predicted", llama->completion->num_tokens_predicted);
     writablemap::putInt(env, result, "tokens_evaluated", llama->completion->num_prompt_tokens);
     writablemap::putInt(env, result, "truncated", llama->completion->truncated);

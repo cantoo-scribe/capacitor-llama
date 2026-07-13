@@ -11,13 +11,13 @@ zip -r android/src/main/capllama-android-jni-libs.zip ./android/src/main/jniLibs
 
 # ios release
 echo "Compressing iOS XCFramework..."
-cd "$ROOT_DIR/ios"
-zip -r capllama.xcframework.zip ./Sources/CapacitorLlamaPlugin/capllama.xcframework
+cd "$ROOT_DIR/ios/Sources/CapacitorLlamaPlugin"
+zip -r capllama.xcframework.zip ./capllama.xcframework
 
 cd "$ROOT_DIR"
 
 mv android/src/main/capllama-android-jni-libs.zip ./
-mv ios/capllama.xcframework.zip ./
+mv ios/Sources/CapacitorLlamaPlugin/capllama.xcframework.zip ./
 
 echo "Creating GitHub release $TAG..."
 gh release create "$TAG" \
