@@ -24,7 +24,7 @@ function normalizeRepositoryUrl(repository) {
     .replace(/\/$/, '');
 }
 
-const releaseBaseUrl = `${normalizeRepositoryUrl(packageJson.repository)}/releases/download/v0.0.2`;
+const releaseBaseUrl = `${normalizeRepositoryUrl(packageJson.repository)}/releases/download/v0.0.3`;
 
 function resolvePackagePath(relativePath) {
   return path.join(packageRoot, relativePath);
